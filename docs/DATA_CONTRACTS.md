@@ -123,6 +123,15 @@ Allowed `action`: `confirm`, `reject`, `correct`, `skip`. A skipped high-semanti
         "source": "child_supplied",
         "source_ref": "ans_02"
       }
+    },
+    {
+      "character_id": "char_02",
+      "name": "朋友",
+      "attributes": {},
+      "provenance": {
+        "source": "child_supplied",
+        "source_ref": "ans_02"
+      }
     }
   ],
   "objects": [
@@ -140,7 +149,7 @@ Allowed `action`: `confirm`, `reject`, `correct`, `skip`. A skipped high-semanti
   "facts": [
     {
       "fact_id": "fact_01",
-      "subject_ref": "char_01",
+      "subject_ref": "char_02",
       "predicate": "is_sad",
       "value": true,
       "provenance": {
@@ -272,4 +281,3 @@ All mutation endpoints require an idempotency key. State-dependent requests incl
 - Additive optional fields may remain within a version; semantic changes require a new version.
 - Provider payloads are converted at adapter boundaries and never stored as the canonical contract.
 - Schema migration tests must prove old session fixtures can either load or fail with an explicit unsupported-version message.
-
