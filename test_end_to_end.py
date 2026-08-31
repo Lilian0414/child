@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 ELEVEN_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-VOICE_ID = "hpp4J3VqNfWAUOO0d1Us"  # 你選定的聲音
+VOICE_ID = "hpp4J3VqNfWAUOO0d1Us"  # Bella
 
 def text_to_speech(text, output_path):
     response = requests.post(
