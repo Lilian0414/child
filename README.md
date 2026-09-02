@@ -30,7 +30,43 @@ MVP 不以「生成一本漂亮故事書」為完成標準，而是要證明一�
 
 ## 專案狀態
 
-目前是 **design / pre-implementation** 階段：產品定位、資料邊界、Agent policy、技術架構與 demo 驗證方式已形成文件；尚未把任何模型或框架標記為已實作。
+目前是 **early implementation** 階段：產品定位、資料邊界、Agent policy、技術架構與 demo 驗證方式已形成文件；React web、FastAPI API 與 CI 的開發迴圈已可運作。模型、故事狀態機與持久層尚未實作。
+
+## 本機開發
+
+需求：
+
+- Node.js 24
+- Python 3.12
+- [uv](https://docs.astral.sh/uv/)
+
+從乾淨的 checkout 安裝鎖定版本：
+
+```bash
+make setup
+```
+
+分別啟動 API 與 web：
+
+```bash
+make dev-api
+```
+
+```bash
+make dev-web
+```
+
+瀏覽器開啟 `http://localhost:5173`。頁面會呼叫
+`http://localhost:8000/health`，並顯示 API 是否可連線。若要改 API 網址，
+將 `apps/web/.env.example` 複製為 `apps/web/.env.local`；若要改允許的 browser
+origin，啟動 API 前設定 `CHILD_API_CORS_ORIGINS`。根目錄的
+`.env.example` 集中列出所有可用變數。
+
+執行與 CI 相同的完整檢查：
+
+```bash
+make check
+```
 
 ## 文件導覽
 
@@ -56,13 +92,12 @@ MVP 不以「生成一本漂亮故事書」為完成標準，而是要證明一�
 4. **One orchestrated state machine**：MVP 使用單一 orchestrator 與結構化步驟，不堆疊互相聊天的 agents。
 5. **No diagnosis from drawings**：本專案不是心理衡鑑、醫療診斷或治療工具。
 
-## 暫定技術方向
+## MVP 技術基線
 
-- Web client：畫作上傳、確認卡片、選擇互動、語音／文字輸入與場景呈現。
-- Python API：session、狀態機、provider adapters、安全檢查與事件紀錄。
+- Web client：React、TypeScript 與 Vite；後續承接畫作上傳、確認卡片、選擇互動、語音／文字輸入與場景呈現。
+- Python API：Python 3.12、FastAPI 與 Pydantic；後續承接 session、狀態機、provider adapters、安全檢查與事件紀錄。
 - Model providers：VLM、LLM、STT、TTS 均經過介面隔離，可依延遲、成本與資料政策替換。
 - Persistence：Hackathon 先以 SQLite + 檔案／物件儲存完成垂直切片；正式環境再更換持久層。
 - Rendering：優先用既有 SVG、sprite、emoji 或固定動畫元件，不依賴逐 scene 生成影片。
 
 技術方向仍以 [Technical design](docs/TECHNICAL_DESIGN.md) 與後續 ADR 為準。
-

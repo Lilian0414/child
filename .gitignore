@@ -1,0 +1,11 @@
+.env
+.DS_Store
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.py[cod]
+apps/web/dist/
+apps/web/node_modules/
+apps/web/coverage/
