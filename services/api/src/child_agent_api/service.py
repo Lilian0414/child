@@ -166,6 +166,110 @@ class WorldStateService:
                 raise NotFoundError("session does not exist")
             return WorldState.model_validate(row.state, strict=False)
 
+    def get_session(self, session_id: str) -> Session:
+        """Load the public session aggregate without exposing an ORM row."""
+        with DbSession(self.engine) as db:
+            row = db.get(SessionRow, session_id)
+            if row is None:
+                raise NotFoundError("session does not exist")
+            return Session.model_validate(
+                {
+                    "session_id": row.session_id,
+                    "schema_version": row.schema_version,
+                    "status": row.status,
+                    "state_version": row.state_version,
+                    "profile": row.profile,
+                    "created_at": row.created_at,
+                    "expires_at": row.expires_at,
+                },
+                strict=False,
+            )
+
+    def event_payloads(self, session_id: str, event_type: str) -> list[str]:
+        """Return immutable fixture progress markers in sequence order."""
+        with DbSession(self.engine) as db:
+            if db.get(SessionRow, session_id) is None:
+                raise NotFoundError("session does not exist")
+            return list(
+                db.scalars(
+                    select(EventRow.payload_ref)
+                    .where(EventRow.session_id == session_id, EventRow.event_type == event_type)
+                    .order_by(EventRow.sequence)
+                )
+            )
+
+    def observation_status(self, session_id: str, observation_id: str) -> str | None:
+        """Read the persisted proposal state used to reconstruct the fixture view."""
+        with DbSession(self.engine) as db:
+            row = db.scalar(
+                select(ObservationRow).where(
+                    ObservationRow.session_id == session_id,
+                    ObservationRow.observation_id == observation_id,
+                )
+            )
+            return None if row is None else row.status
+
+    def apply_story_choice(
+        self,
+        session_id: str,
+        choice_id: str,
+        expected_state_version: int,
+        idempotency_key: str,
+    ) -> WorldState:
+        """Persist one validated deterministic-fixture choice and its derived fact."""
+        allowed = {
+            "choice_ask": ("response", "asked_kindly"),
+            "choice_tease": ("response", "teased"),
+            "choice_invite": ("next_action", "invited_to_play"),
+            "choice_give_space": ("next_action", "gave_space"),
+        }
+        if choice_id not in allowed:
+            raise InvalidReferenceError("choice is not available")
+
+        def change(
+            db: DbSession, world: WorldState
+        ) -> tuple[WorldState, str, Literal["system", "model", "child", "adult"], str]:
+            prior = list(
+                db.scalars(
+                    select(EventRow.payload_ref)
+                    .where(
+                        EventRow.session_id == session_id,
+                        EventRow.event_type == "CHILD_CHOICE_ACCEPTED",
+                    )
+                    .order_by(EventRow.sequence)
+                )
+            )
+            valid_now = (
+                {"choice_ask", "choice_tease"}
+                if len(prior) == 0
+                else {"choice_invite", "choice_give_space"}
+                if len(prior) == 1
+                else set()
+            )
+            if choice_id not in valid_now:
+                raise InvalidReferenceError("choice is not available at the current scene")
+            if not any(item.type == "balloon" for item in world.objects):
+                raise InvalidReferenceError("story requires the corrected balloon world")
+            predicate, value = allowed[choice_id]
+            updated = world.model_copy(deep=True)
+            updated.version += 1
+            updated.facts.append(
+                Fact(
+                    fact_id=f"fact_choice_{len(prior) + 1}",
+                    subject_ref=next(
+                        item.object_id for item in world.objects if item.type == "balloon"
+                    ),
+                    predicate=predicate,
+                    value=value,
+                    provenance=Provenance(
+                        source=ProvenanceSource.STORY_DERIVED, source_ref=choice_id
+                    ),
+                )
+            )
+            return updated, "CHILD_CHOICE_ACCEPTED", "child", choice_id
+
+        return self._mutate(session_id, expected_state_version, idempotency_key, change)
+
     def confirmed_facts(self, session_id: str) -> list[Fact]:
         world = self.get_world(session_id)
         stale = set(world.stale_fact_ids)
