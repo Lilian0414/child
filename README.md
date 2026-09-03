@@ -30,7 +30,9 @@ MVP 不以「生成一本漂亮故事書」為完成標準，而是要證明一�
 
 ## 專案狀態
 
-目前是 **early implementation** 階段：產品定位、資料邊界、Agent policy、技術架構與 demo 驗證方式已形成文件；React web、FastAPI API 與 CI 的開發迴圈已可運作。模型、故事狀態機與持久層尚未實作。
+目前是 **early implementation** 階段：產品定位、資料邊界、Agent policy、技術架構與 demo 驗證方式已形成文件；React web、FastAPI API 與 CI 的開發迴圈已可運作。Provider-neutral 的 session、
+observation、world-state event/snapshot core 與 SQLite migrations 已實作；公開 session API、
+模型與故事迴圈仍未實作。
 
 ## 本機開發
 
