@@ -5,7 +5,9 @@ description = "API for the Child-Grounded Story Agent"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "alembic>=1.16,<2",
   "fastapi>=0.115,<1",
+  "sqlalchemy>=2.0,<3",
   "uvicorn[standard]>=0.34,<1",
 ]
 

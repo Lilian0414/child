@@ -1,6 +1,6 @@
 # Data and API contracts
 
-_Status: Proposed_  
+_Status: Session/world-state subset implemented; story/API sections proposed_
 _Last reviewed: 2026-08-29_
 
 This document defines domain boundaries. Examples are illustrative JSON, not a committed OpenAPI schema. The first implementation issue should convert accepted contracts into Pydantic models and generated API documentation.
