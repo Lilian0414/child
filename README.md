@@ -30,9 +30,10 @@ MVP 不以「生成一本漂亮故事書」為完成標準，而是要證明一�
 
 ## 專案狀態
 
-目前是 **early implementation** 階段：產品定位、資料邊界、Agent policy、技術架構與 demo 驗證方式已形成文件；React web、FastAPI API 與 CI 的開發迴圈已可運作。Provider-neutral 的 session、
-observation、world-state event/snapshot core 與 SQLite migrations 已實作；公開 session API、
-模型與故事迴圈仍未實作。
+目前是 **deterministic vertical slice** 階段：React 與 FastAPI 已跑通合成畫作、ball → balloon
+修正、三個場景、兩次選擇與非評分結尾。流程只使用 repository fixture；尚未接入即時模型或真實媒體。
+後端沿用 provider-neutral session、observation、world-state event/snapshot core，頁面重新整理時會從 API
+依 persisted observation、world snapshot 與 immutable choice events 重建目前場景。
 
 ## 本機開發
 
@@ -51,6 +52,7 @@ make setup
 分別啟動 API 與 web：
 
 ```bash
+uv run --project services/api alembic -c services/api/alembic.ini upgrade head
 make dev-api
 ```
 
@@ -58,11 +60,25 @@ make dev-api
 make dev-web
 ```
 
-瀏覽器開啟 `http://localhost:5173`。頁面會呼叫
-`http://localhost:8000/health`，並顯示 API 是否可連線。若要改 API 網址，
+瀏覽器開啟 `http://localhost:5173`。若要改 API 網址，
 將 `apps/web/.env.example` 複製為 `apps/web/.env.local`；若要改允許的 browser
 origin，啟動 API 前設定 `CHILD_API_CORS_ORIGINS`。根目錄的
 `.env.example` 集中列出所有可用變數。
+
+### Deterministic fixture browser UAT
+
+1. 先執行上面的 migration、`make dev-api` 與 `make dev-web`，開啟 `http://localhost:5173`。
+2. 確認畫面一直顯示「合成資料・展示模式」，按「開始示範故事」。
+3. 按「使用這張合成示範圖」，確認系統只把圓形物件暫時稱為球；此時重新整理，應回到同一張 grounding card。
+4. 按「不是球，是四顆氣球」，確認過場文字與場景 1 都使用「氣球」；重新整理應回到場景 1。
+5. 在場景 1 選「笑他抓不到氣球」，確認場景 2 顯示朋友安靜走到旁邊，沒有答錯或扣分文字；重新整理應回到場景 2。
+6. 在場景 2 選「先在旁邊等一等」，確認到達場景 3 / 3 的結尾；重新整理應保持相同結尾。
+7. 按「再開始一次」，確認回到 setup；也可另跑一次並在場景 1 選「問問朋友還好嗎」，比較場景 2 的不同敘事。
+
+此 slice 的公開 API 為 `POST /v1/sessions`、`GET /v1/sessions/{id}`、
+`POST /v1/sessions/{id}/fixture`、`POST /v1/sessions/{id}/grounding` 與
+`POST /v1/sessions/{id}/choices`。Mutation body 都帶 `expected_state_version` 與
+`idempotency_key`；重送相同 key 不重複推進，過期 version 回傳 `409 state_conflict`。
 
 執行與 CI 相同的完整檢查：
 
