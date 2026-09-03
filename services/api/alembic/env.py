@@ -1,9 +1,11 @@
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
+from child_agent_api.persistence.database import database_url
 from child_agent_api.persistence.models import Base
 
 config = context.config
+config.set_main_option("sqlalchemy.url", database_url(config.get_main_option("sqlalchemy.url")))
 target_metadata = Base.metadata
 
 

@@ -1,10 +1,33 @@
 """SQLAlchemy persistence models; deliberately separate from domain contracts."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.types import JSON
+from sqlalchemy.types import JSON, TypeDecorator
+
+
+class UTCDateTime(TypeDecorator[datetime]):
+    """Persist datetimes in UTC and restore SQLite's discarded timezone."""
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: object) -> datetime | None:
+        del dialect
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError("timestamps must be timezone-aware")
+        return value.astimezone(UTC)
+
+    def process_result_value(self, value: datetime | None, dialect: object) -> datetime | None:
+        del dialect
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
 
 class Base(DeclarativeBase):
@@ -18,8 +41,8 @@ class SessionRow(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     state_version: Mapped[int] = mapped_column(Integer, nullable=False)
     profile: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), nullable=False)
     __table_args__ = (CheckConstraint("state_version >= 0"),)
 
 
@@ -59,7 +82,7 @@ class EventRow(Base):
     state_version_after: Mapped[int] = mapped_column(Integer, nullable=False)
     actor: Mapped[str] = mapped_column(String, nullable=False)
     payload_ref: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), nullable=False)
     __table_args__ = (
         UniqueConstraint("session_id", "sequence", name="uq_events_session_sequence"),
         CheckConstraint("sequence > 0"),

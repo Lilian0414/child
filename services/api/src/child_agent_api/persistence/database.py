@@ -7,8 +7,13 @@ from sqlalchemy import Engine, create_engine, event
 DEFAULT_DATABASE_URL = "sqlite:///./child_agent.db"
 
 
+def database_url(default: str = DEFAULT_DATABASE_URL) -> str:
+    """Return the shared application and migration database URL."""
+    return os.getenv("CHILD_DATABASE_URL") or default
+
+
 def create_database_engine(url: str | None = None) -> Engine:
-    engine = create_engine(url or os.getenv("CHILD_DATABASE_URL") or DEFAULT_DATABASE_URL)
+    engine = create_engine(url or database_url())
     if engine.dialect.name == "sqlite":
 
         @event.listens_for(engine, "connect")

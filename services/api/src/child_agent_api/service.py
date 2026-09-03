@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session as DbSession
@@ -244,7 +243,7 @@ class WorldStateService:
                 world.characters.append(
                     Character(
                         character_id=f"char_{suffix}",
-                        name=str(value["name"]),
+                        name=value["name"],
                         attributes=value.get("attributes", {}),
                         provenance=provenance,
                     )
@@ -253,8 +252,8 @@ class WorldStateService:
                 world.objects.append(
                     WorldObject(
                         object_id=f"obj_{suffix}",
-                        type=str(value["type"] if "type" in value else value["label"]),
-                        count=int(value.get("count", 1)),
+                        type=value["type"] if "type" in value else value["label"],
+                        count=value.get("count", 1),
                         provenance=provenance,
                     )
                 )
@@ -262,26 +261,24 @@ class WorldStateService:
                 world.relationships.append(
                     Relationship(
                         relationship_id=f"rel_{suffix}",
-                        from_ref=str(value["from_ref"]),
-                        to_ref=str(value["to_ref"]),
-                        kind=str(value["kind"]),
+                        from_ref=value["from_ref"],
+                        to_ref=value["to_ref"],
+                        kind=value["kind"],
                         provenance=provenance,
                     )
                 )
             elif kind == "fact":
-                fact_id = str(value.get("fact_id", f"fact_{suffix}"))
+                fact_id = value.get("fact_id", f"fact_{suffix}")
                 previous = next((fact for fact in world.facts if fact.fact_id == fact_id), None)
                 if previous is not None:
                     world.facts.remove(previous)
                 world.facts.append(
                     Fact(
                         fact_id=fact_id,
-                        subject_ref=str(value["subject_ref"]),
-                        predicate=str(value["predicate"]),
+                        subject_ref=value["subject_ref"],
+                        predicate=value["predicate"],
                         value=value["value"],
-                        depends_on=TypeAdapter(list[str]).validate_python(
-                            value.get("depends_on", [])
-                        ),
+                        depends_on=value.get("depends_on", []),
                         provenance=provenance,
                     )
                 )

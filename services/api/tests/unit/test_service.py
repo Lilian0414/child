@@ -69,7 +69,28 @@ def test_stale_version_and_duplicate_are_no_ops(service: WorldStateService, engi
         assert row.status == "proposed"
 
 
-def test_invalid_candidate_rolls_back_decision(service: WorldStateService, engine: object) -> None:
+@pytest.mark.parametrize(
+    ("kind", "candidate", "decision"),
+    [
+        (
+            ObservationKind.OBJECT_COUNT,
+            {"label": "ball", "count": 2.7},
+            ObservationDecision(action="confirm"),
+        ),
+        (
+            ObservationKind.CHARACTER,
+            {"name": "Alex"},
+            ObservationDecision(action="correct", supplied_value={"name": 42}),
+        ),
+    ],
+)
+def test_invalid_candidate_types_roll_back_decision(
+    service: WorldStateService,
+    engine: object,
+    kind: ObservationKind,
+    candidate: dict[str, object],
+    decision: ObservationDecision,
+) -> None:
     invalid = ObservationBatch(
         schema_version="observation.v1",
         batch_id="obsb_bad",
@@ -77,8 +98,8 @@ def test_invalid_candidate_rolls_back_decision(service: WorldStateService, engin
         items=[
             ObservationItem(
                 observation_id="obs_bad",
-                kind=ObservationKind.FACT,
-                candidate={"predicate": "mood", "value": True},
+                kind=kind,
+                candidate=candidate,  # type: ignore[arg-type]
                 confidence=0.4,
             )
         ],
@@ -89,7 +110,7 @@ def test_invalid_candidate_rolls_back_decision(service: WorldStateService, engin
             "ses_synthetic",
             "obs_bad",
             "ans_bad",
-            ObservationDecision(action="confirm"),
+            decision,
             1,
             "key_bad",
         )

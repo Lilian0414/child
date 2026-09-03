@@ -1,3 +1,5 @@
+from datetime import UTC
+
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -43,6 +45,36 @@ def test_event_snapshot_and_idempotency_are_atomic(
         assert session_row is not None and snapshot_row is not None
         assert session_row.state_version == 0
         assert snapshot_row.version == 0
+
+
+def test_sqlite_timestamps_round_trip_as_utc(
+    engine: object, service: WorldStateService
+) -> None:
+    service.record_observations(
+        "ses_synthetic",
+        ObservationBatch(
+            schema_version="observation.v1",
+            batch_id="obsb_time",
+            media_id="med_fake",
+            items=[
+                ObservationItem(
+                    observation_id="obs_time",
+                    kind=ObservationKind.OBJECT,
+                    candidate={"type": "kite"},
+                    confidence=0.8,
+                )
+            ],
+        ),
+        0,
+        "key_time",
+    )
+    with Session(engine) as db:  # type: ignore[arg-type]
+        session_row = db.get(SessionRow, "ses_synthetic")
+        event_row = db.scalar(select(EventRow))
+        assert session_row is not None and event_row is not None
+        assert session_row.created_at.tzinfo is UTC
+        assert session_row.expires_at.tzinfo is UTC
+        assert event_row.created_at.tzinfo is UTC
 
 
 def test_correction_keeps_history_and_marks_transitive_derived_facts_stale(
