@@ -225,6 +225,22 @@ class WorldStateService:
         if len({item.candidate_id for item in decisions}) != len(decisions):
             raise InvalidReferenceError("candidate decisions must be unique")
 
+        # Reconciliation is valid only for the exact canonical snapshot it read. Marking
+        # the old work superseded makes the conflict recoverable without touching the world.
+        with DbSession(self.engine) as db, db.begin():
+            revision = db.get(DrawingRevisionRow, revision_id)
+            session = db.get(SessionRow, session_id)
+            if revision is None or revision.session_id != session_id:
+                raise InvalidReferenceError("revision does not exist in session")
+            if session is None:
+                raise NotFoundError("session does not exist")
+            if (
+                revision.status == "awaiting_grounding"
+                and revision.based_on_world_version != session.state_version
+            ):
+                revision.status = "superseded"
+                return self._revision_state(db, revision)
+
         def change(
             db: DbSession, world: WorldState
         ) -> tuple[WorldState, str, Literal["system", "model", "child", "adult"], str]:
@@ -246,6 +262,14 @@ class WorldStateService:
             }
             if not decisions or any(item.candidate_id not in allowed for item in decisions):
                 raise InvalidReferenceError("decision does not target a grounding prompt")
+            prompts = {
+                prompt.candidate_id: prompt
+                for prompt in select_prompts([self._candidate(item) for item in rows])
+            }
+            if any(
+                item.action not in prompts[item.candidate_id].allowed_actions for item in decisions
+            ):
+                raise InvalidReferenceError("decision action is not allowed for this observation")
             updated = world.model_copy(deep=True)
             updated.version += 1
             supplied = {item.candidate_id: item for item in decisions}
@@ -299,7 +323,7 @@ class WorldStateService:
         return RevisionState(
             revision=revision,
             candidates=candidates,
-            prompts=[] if row.status == "resolved" else select_prompts(candidates),
+            prompts=(select_prompts(candidates) if row.status == "awaiting_grounding" else []),
             world=WorldState.model_validate(snapshot.state, strict=False),
         )
 

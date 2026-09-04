@@ -17,12 +17,12 @@ from child_agent_api.domain.errors import (
 from child_agent_api.domain.models import (
     AccessibilityProfile,
     CandidateDecision,
-    JsonValue,
     ObservationBatch,
     ObservationDecision,
     RevisionState,
 )
 from child_agent_api.fixture_flow import FlowView, build_view, observation_batch, observation_id
+from child_agent_api.observer import ObserverItem, ObserverPayload
 from child_agent_api.persistence.database import create_database_engine
 from child_agent_api.service import WorldStateService
 
@@ -66,33 +66,17 @@ class SubmitRevisionRequest(MutationRequest):
     observations: "RevisionObservationBatch"
 
 
-class RevisionObservation(ApiModel):
-    observation_id: Annotated[str, Field(pattern=r"^obs_[A-Za-z0-9_-]+$")]
-    kind: Literal["character", "object", "relationship", "fact", "object_count"]
-    candidate: dict[str, JsonValue]
-    confidence: Annotated[float, Field(ge=0, le=1)]
-    needs_confirmation: bool = True
-    evidence_note: Annotated[str | None, Field(max_length=500)] = None
-
-
 class RevisionObservationBatch(ApiModel):
     schema_version: Literal["observation.v1"]
     batch_id: Annotated[str, Field(pattern=r"^obsb_[A-Za-z0-9_-]+$")]
     media_id: Annotated[str, Field(pattern=r"^med_[A-Za-z0-9_-]+$")]
-    items: list[RevisionObservation] = Field(min_length=1, max_length=30)
+    items: list[ObserverItem] = Field(min_length=1, max_length=30)
 
     def to_domain(self) -> ObservationBatch:
         return ObservationBatch.model_validate(
             {
                 **self.model_dump(),
-                "items": [
-                    {
-                        **item.model_dump(),
-                        "status": "proposed",
-                        "source": "model_observation",
-                    }
-                    for item in self.items
-                ],
+                "items": ObserverPayload(items=self.items).to_domain_items(),
             },
             strict=False,
         )

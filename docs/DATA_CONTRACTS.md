@@ -180,6 +180,19 @@ unasked or skipped proposals remain non-canonical. Decisions are `confirm`, `cor
 `skip`. Removed IDs are retained as tombstone references so immutable history and stale derived
 dependencies remain valid without exposing the removed item as current canonical state.
 
+The revision API accepts the same kind-discriminated, allowlisted observer item DTOs as the live
+Observer boundary. Canonical status, provenance, identity and relationship references cannot be
+submitted as model-controlled observation fields. Visible `object` and `object_count` proposals
+can be confirmed into canonical objects. `character`, `fact`, and `relationship` observations do
+not contain enough child-grounded identity/reference information to be confirmed directly, so
+their prompts allow only correction (child-supplied canonical meaning), rejection, or skipping.
+Confirming a removal remains allowed because it refers to an existing canonical item.
+
+An awaiting revision is valid only while the world remains at `based_on_world_version`. If another
+mutation advances the world before resolution, the resolution attempt marks the revision
+`superseded` without applying candidates or advancing the world, clears its prompts, and permits a
+fresh revision to be submitted against the current version.
+
 ## 6. Story plan, scene and choice
 
 ```json

@@ -175,6 +175,16 @@ def select_prompts(candidates: list[ReconciliationCandidate]) -> list[GroundingP
         key=lambda item: (priorities[item.change], item.candidate_id),
     )[:MAX_GROUNDING_PROMPTS]
     return [
-        GroundingPrompt(candidate_id=item.candidate_id, change=item.change, kind=item.kind)
+        GroundingPrompt(
+            candidate_id=item.candidate_id,
+            change=item.change,
+            kind=item.kind,
+            allowed_actions=(
+                ["confirm", "correct", "reject", "skip"]
+                if item.change == SemanticChange.REMOVED
+                or item.kind in {ObservationKind.OBJECT, ObservationKind.OBJECT_COUNT}
+                else ["correct", "reject", "skip"]
+            ),
+        )
         for item in selected
     ]

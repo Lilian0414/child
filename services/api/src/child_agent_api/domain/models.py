@@ -212,7 +212,7 @@ class DrawingRevision(Contract):
     number: int = Field(ge=1)
     batch_id: Identifier
     based_on_world_version: int = Field(ge=0)
-    status: Literal["awaiting_grounding", "resolved"]
+    status: Literal["awaiting_grounding", "resolved", "superseded"]
     created_at: datetime
 
 
@@ -234,6 +234,7 @@ class GroundingPrompt(Contract):
     action: Literal["confirm_or_correct"] = "confirm_or_correct"
     change: SemanticChange
     kind: ObservationKind
+    allowed_actions: list[Literal["confirm", "correct", "reject", "skip"]]
 
 
 class RevisionState(Contract):
