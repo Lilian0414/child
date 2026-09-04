@@ -254,3 +254,52 @@ class CandidateDecision(Contract):
         if (self.action == "correct") != (self.supplied_value is not None):
             raise ValueError("only correction requires supplied_value")
         return self
+
+
+class StoryProposal(Contract):
+    schema_version: Literal["story-proposal.v1"] = "story-proposal.v1"
+    proposal_id: Identifier
+    session_id: Identifier
+    based_on_state_version: int = Field(ge=0)
+    segment_index: int = Field(ge=0)
+    text: str = Field(min_length=1, max_length=500)
+    world_dependencies: list[Identifier] = Field(default_factory=list, max_length=10)
+    status: Literal["pending", "accepted", "superseded", "rejected"] = "pending"
+
+
+class StorySegment(Contract):
+    segment_id: Identifier
+    index: int = Field(ge=0)
+    text: str = Field(min_length=1, max_length=500)
+    provenance: Provenance
+    proposal_id: Identifier
+    world_dependencies: list[Identifier] = Field(default_factory=list)
+    status: Literal["current", "stale"] = "current"
+
+
+class StoryState(Contract):
+    schema_version: Literal["story.v1"] = "story.v1"
+    session_id: Identifier
+    state_version: int = Field(ge=0)
+    next_segment_index: int = Field(ge=0)
+    segments: list[StorySegment] = Field(default_factory=list)
+    current_proposal: StoryProposal | None = None
+
+
+class FullStory(Contract):
+    schema_version: Literal["full-story.v1"] = "full-story.v1"
+    session_id: Identifier
+    state_version: int = Field(ge=0)
+    text: str
+    segment_ids: list[Identifier]
+
+
+class StoryGrounding(Contract):
+    action: Literal["accept", "correct", "redirect"]
+    supplied_text: str | None = Field(default=None, min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def supplied_content_matches_action(self) -> "StoryGrounding":
+        if (self.action in {"correct", "redirect"}) != (self.supplied_text is not None):
+            raise ValueError("correction and redirect require supplied text")
+        return self

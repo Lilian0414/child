@@ -140,3 +140,21 @@ class IdempotencyRow(Base):
     key: Mapped[str] = mapped_column(String, nullable=False)
     result: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     __table_args__ = (UniqueConstraint("session_id", "key", name="uq_idempotency_session_key"),)
+
+
+class StorySnapshotRow(Base):
+    __tablename__ = "story_snapshots"
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.session_id"), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(String, nullable=False)
+    state_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+
+
+class StoryProposalRow(Base):
+    __tablename__ = "story_proposals"
+    proposal_id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.session_id"), nullable=False)
+    based_on_state_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    proposal: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    __table_args__ = (UniqueConstraint("session_id", "based_on_state_version"),)

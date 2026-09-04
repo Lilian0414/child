@@ -1,6 +1,6 @@
 # Data and API contracts
 
-_Status: Session/world-state subset implemented; story/API sections proposed_
+_Status: Session, world-state, drawing-revision, and canonical story core implemented_
 _Last reviewed: 2026-08-29_
 
 This document defines domain boundaries. Examples are illustrative JSON, not a committed OpenAPI schema. The first implementation issue should convert accepted contracts into Pydantic models and generated API documentation.
@@ -194,6 +194,19 @@ mutation advances the world before resolution, the resolution attempt marks the 
 fresh revision to be submitted against the current version.
 
 ## 6. Story plan, scene and choice
+
+The implemented CORE-02 boundary persists a session-local `story.v1` snapshot containing ordered
+accepted segments, provenance, world dependencies, and at most one pending `story-proposal.v1`.
+Proposals are provider-neutral and do not advance state until the child accepts, corrects, or
+redirects them. `GET /v1/sessions/{id}/story/full` deterministically joins current (non-stale)
+segments; rejected, superseded, pending, and dependency-invalidated content is excluded.
+
+Story providers return only bounded text and canonical world dependency references. Core assigns
+proposal identity, session identity, canonical status, state version, and segment index after
+validating that provider content against the strict provider DTO. Every canonical version advance
+supersedes an older pending proposal, even when all of its dependency IDs remain active. A
+grounded drawing revision also marks accepted segments stale when it changes or removes a
+dependency's meaning; canonical ID reuse does not preserve semantically outdated story content.
 
 ```json
 {

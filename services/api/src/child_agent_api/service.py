@@ -17,6 +17,7 @@ from child_agent_api.domain.models import (
     DomainEvent,
     DrawingRevision,
     Fact,
+    FullStory,
     ObservationBatch,
     ObservationDecision,
     ObservationItem,
@@ -27,6 +28,10 @@ from child_agent_api.domain.models import (
     RevisionState,
     Session,
     SessionStatus,
+    StoryGrounding,
+    StoryProposal,
+    StorySegment,
+    StoryState,
     WorldObject,
     WorldState,
 )
@@ -44,9 +49,12 @@ from child_agent_api.persistence.models import (
     ObservationRow,
     ReconciliationCandidateRow,
     SessionRow,
+    StoryProposalRow,
+    StorySnapshotRow,
     WorldSnapshotRow,
 )
 from child_agent_api.reconciliation import reconcile, select_prompts
+from child_agent_api.story import DeterministicStoryProvider, StoryProvider, StoryProviderResult
 
 JsonObject = dict[str, Any]
 
@@ -83,6 +91,15 @@ class WorldStateService:
                     schema_version="world.v1",
                     version=0,
                     state=world.model_dump(mode="json"),
+                )
+            )
+            story = StoryState(session_id=session_id, state_version=0, next_segment_index=0)
+            db.add(
+                StorySnapshotRow(
+                    session_id=session_id,
+                    schema_version="story.v1",
+                    state_version=0,
+                    state=story.model_dump(mode="json"),
                 )
             )
         return domain
@@ -294,8 +311,195 @@ class WorldStateService:
             revision.status = "resolved"
             return updated, "DRAWING_REVISION_GROUNDED", "child", command_id
 
-        self._mutate(session_id, expected_state_version, idempotency_key, change)
+        invalidated_refs: set[str] = set()
+        with DbSession(self.engine) as db:
+            rows = list(
+                db.scalars(
+                    select(ReconciliationCandidateRow).where(
+                        ReconciliationCandidateRow.revision_id == revision_id
+                    )
+                )
+            )
+            supplied = {item.candidate_id: item for item in decisions}
+            for row in rows:
+                decision = supplied.get(row.candidate_id)
+                if (
+                    row.current_ref is not None
+                    and row.change in {"changed", "removed"}
+                    and decision is not None
+                    and decision.action in {"confirm", "correct"}
+                ):
+                    invalidated_refs.add(row.current_ref)
+        self._mutate(
+            session_id,
+            expected_state_version,
+            idempotency_key,
+            change,
+            invalidated_story_refs=invalidated_refs,
+        )
         return self.get_revision(session_id, revision_id)
+
+    def get_story(self, session_id: str) -> StoryState:
+        with DbSession(self.engine) as db:
+            row = db.get(StorySnapshotRow, session_id)
+            if row is None:
+                raise NotFoundError("session does not exist")
+            return StoryState.model_validate(row.state, strict=False)
+
+    def request_story_proposal(
+        self,
+        session_id: str,
+        expected_state_version: int,
+        provider: StoryProvider | None = None,
+    ) -> StoryState:
+        """Validate and persist an uncommitted proposal without advancing canonical state."""
+        provider = provider or DeterministicStoryProvider()
+        with DbSession(self.engine) as db, db.begin():
+            session = db.get(SessionRow, session_id)
+            snapshot = db.get(StorySnapshotRow, session_id)
+            world_row = db.get(WorldSnapshotRow, session_id)
+            if session is None or snapshot is None or world_row is None:
+                raise NotFoundError("session does not exist")
+            if session.state_version != expected_state_version:
+                raise VersionConflictError(expected_state_version, session.state_version)
+            story = StoryState.model_validate(snapshot.state, strict=False)
+            if story.current_proposal is not None:
+                return story
+            # Story snapshots may lag world-only transitions; synchronize their optimistic
+            # concurrency token before giving the provider its canonical read model.
+            story.state_version = expected_state_version
+            provider_result = StoryProviderResult.model_validate(
+                provider.propose(
+                    WorldState.model_validate(world_row.state, strict=False),
+                    story,
+                )
+            )
+            proposal = StoryProposal(
+                proposal_id=f"proposal_{uuid4().hex}",
+                session_id=session_id,
+                based_on_state_version=expected_state_version,
+                segment_index=story.next_segment_index,
+                text=provider_result.text,
+                world_dependencies=provider_result.world_dependencies,
+            )
+            active = (
+                {x.character_id for x in self.get_world(session_id).characters}
+                | {x.object_id for x in self.get_world(session_id).objects}
+                | {x.fact_id for x in self.get_world(session_id).facts}
+            )
+            if not set(proposal.world_dependencies) <= active:
+                raise InvalidReferenceError("provider returned invalid world dependencies")
+            story.current_proposal = proposal
+            db.add(
+                StoryProposalRow(
+                    proposal_id=proposal.proposal_id,
+                    session_id=session_id,
+                    based_on_state_version=expected_state_version,
+                    status="pending",
+                    proposal=proposal.model_dump(mode="json"),
+                )
+            )
+            snapshot.state = story.model_dump(mode="json")
+            return story
+
+    def ground_story_proposal(
+        self,
+        session_id: str,
+        proposal_id: str,
+        grounding: StoryGrounding,
+        expected_state_version: int,
+        idempotency_key: str,
+    ) -> StoryState:
+        with DbSession(self.engine) as db, db.begin():
+            duplicate = db.scalar(
+                select(IdempotencyRow).where(
+                    IdempotencyRow.session_id == session_id, IdempotencyRow.key == idempotency_key
+                )
+            )
+            if duplicate is not None:
+                row = db.get(StorySnapshotRow, session_id)
+                assert row is not None
+                return StoryState.model_validate(row.state, strict=False)
+            session = db.get(SessionRow, session_id)
+            story_row = db.get(StorySnapshotRow, session_id)
+            world_row = db.get(WorldSnapshotRow, session_id)
+            proposal_row = db.get(StoryProposalRow, proposal_id)
+            if session is None or story_row is None or world_row is None:
+                raise NotFoundError("session does not exist")
+            if session.state_version != expected_state_version:
+                raise VersionConflictError(expected_state_version, session.state_version)
+            story = StoryState.model_validate(story_row.state, strict=False)
+            proposal = story.current_proposal
+            if proposal is None or proposal.proposal_id != proposal_id or proposal_row is None:
+                raise InvalidReferenceError("proposal is not current")
+            if proposal.based_on_state_version != session.state_version:
+                raise InvalidReferenceError("proposal is stale")
+            text = proposal.text if grounding.action == "accept" else grounding.supplied_text
+            assert text is not None
+            source = (
+                ProvenanceSource.CHILD_CONFIRMED
+                if grounding.action == "accept"
+                else ProvenanceSource.CHILD_SUPPLIED
+            )
+            next_version = expected_state_version + 1
+            story.segments.append(
+                StorySegment(
+                    segment_id=f"segment_{uuid4().hex}",
+                    index=story.next_segment_index,
+                    text=text,
+                    provenance=Provenance(source=source, source_ref=proposal_id),
+                    proposal_id=proposal_id,
+                    world_dependencies=proposal.world_dependencies,
+                )
+            )
+            story.next_segment_index += 1
+            story.state_version = next_version
+            story.current_proposal = None
+            proposal_row.status = "accepted" if grounding.action == "accept" else "superseded"
+            world = WorldState.model_validate(world_row.state, strict=False)
+            world.version = next_version
+            session.state_version = next_version
+            world_row.version = next_version
+            world_row.state = world.model_dump(mode="json")
+            story_row.state_version = next_version
+            story_row.state = story.model_dump(mode="json")
+            sequence = (
+                db.scalar(
+                    select(func.max(EventRow.sequence)).where(EventRow.session_id == session_id)
+                )
+                or 0
+            ) + 1
+            db.add(
+                EventRow(
+                    event_id=f"evt_{uuid4().hex}",
+                    session_id=session_id,
+                    sequence=sequence,
+                    event_type="STORY_SEGMENT_GROUNDED",
+                    state_version_before=expected_state_version,
+                    state_version_after=next_version,
+                    actor="child",
+                    payload_ref=proposal_id,
+                    created_at=datetime.now(UTC),
+                )
+            )
+            db.add(
+                IdempotencyRow(
+                    session_id=session_id, key=idempotency_key, result=world.model_dump(mode="json")
+                )
+            )
+            return story
+
+    def full_story(self, session_id: str) -> FullStory:
+        story = self.get_story(session_id)
+        segments = sorted(
+            (x for x in story.segments if x.status == "current"), key=lambda x: x.index
+        )
+        return FullStory(
+            session_id=session_id,
+            state_version=story.state_version,
+            text="\n".join(x.text for x in segments),
+            segment_ids=[x.segment_id for x in segments],
+        )
 
     def _revision_state(self, db: DbSession, row: DrawingRevisionRow) -> RevisionState:
         snapshot = db.get(WorldSnapshotRow, row.session_id)
@@ -671,6 +875,8 @@ class WorldStateService:
             [DbSession, WorldState],
             tuple[WorldState, str, Literal["system", "model", "child", "adult"], str],
         ],
+        *,
+        invalidated_story_refs: set[str] | None = None,
     ) -> WorldState:
         with DbSession(self.engine) as db, db.begin():
             duplicate = db.scalar(
@@ -710,12 +916,46 @@ class WorldStateService:
             snapshot.version = world.version
             snapshot.state = world.model_dump(mode="json")
             session.state_version = world.version
+            self._invalidate_story_dependencies_in_transaction(
+                db, session_id, world, invalidated_story_refs or set()
+            )
             db.add(
                 IdempotencyRow(session_id=session_id, key=key, result=world.model_dump(mode="json"))
             )
             if self.before_commit is not None:
                 self.before_commit()
             return world
+
+    @staticmethod
+    def _invalidate_story_dependencies_in_transaction(
+        db: DbSession, session_id: str, world: WorldState, invalidated_refs: set[str]
+    ) -> None:
+        """Synchronize story and invalidate semantically outdated dependencies."""
+        row = db.get(StorySnapshotRow, session_id)
+        if row is None:
+            return
+        story = StoryState.model_validate(row.state, strict=False)
+        active = (
+            {item.character_id for item in world.characters}
+            | {item.object_id for item in world.objects}
+            | {item.fact_id for item in world.facts}
+        )
+        for segment in story.segments:
+            dependencies = set(segment.world_dependencies)
+            if not dependencies <= active or bool(dependencies & invalidated_refs):
+                segment.status = "stale"
+        if story.current_proposal is not None and (
+            story.current_proposal.based_on_state_version != world.version
+            or not set(story.current_proposal.world_dependencies) <= active
+            or bool(set(story.current_proposal.world_dependencies) & invalidated_refs)
+        ):
+            proposal = db.get(StoryProposalRow, story.current_proposal.proposal_id)
+            if proposal is not None:
+                proposal.status = "superseded"
+            story.current_proposal = None
+        story.state_version = world.version
+        row.state_version = world.version
+        row.state = story.model_dump(mode="json")
 
     @staticmethod
     def _promote(
