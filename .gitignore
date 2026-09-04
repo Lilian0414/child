@@ -9,3 +9,4 @@ __pycache__/
 apps/web/dist/
 apps/web/node_modules/
 apps/web/coverage/
+/build/
