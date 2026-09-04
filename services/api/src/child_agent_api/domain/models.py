@@ -125,18 +125,21 @@ class WorldState(Contract):
     relationships: list[Relationship] = Field(default_factory=list)
     facts: list[Fact] = Field(default_factory=list)
     stale_fact_ids: list[Identifier] = Field(default_factory=list)
+    retired_ids: list[Identifier] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def valid_references(self) -> "WorldState":
         entity_ids = {x.character_id for x in self.characters} | {x.object_id for x in self.objects}
         fact_ids = {x.fact_id for x in self.facts}
-        all_ids = entity_ids | fact_ids
+        all_ids = entity_ids | fact_ids | set(self.retired_ids)
         if any(f.subject_ref not in all_ids for f in self.facts):
             raise ValueError("fact subject reference does not exist")
-        if any(dep not in fact_ids for fact in self.facts for dep in fact.depends_on):
+        if any(dep not in all_ids for fact in self.facts for dep in fact.depends_on):
             raise ValueError("fact dependency reference does not exist")
         if not set(self.stale_fact_ids) <= fact_ids:
             raise ValueError("stale fact reference does not exist")
+        if set(self.retired_ids) & (entity_ids | fact_ids):
+            raise ValueError("active and retired IDs must be disjoint")
         if any(
             r.from_ref not in entity_ids or r.to_ref not in entity_ids for r in self.relationships
         ):
@@ -184,11 +187,69 @@ class DomainEvent(Contract):
 
 
 class ObservationDecision(Contract):
-    action: Literal["confirm", "reject", "correct"]
+    action: Literal["confirm", "reject", "correct", "skip"]
     supplied_value: dict[str, JsonValue] | None = None
 
     @model_validator(mode="after")
     def correction_has_value(self) -> "ObservationDecision":
+        if (self.action == "correct") != (self.supplied_value is not None):
+            raise ValueError("only correction requires supplied_value")
+        return self
+
+
+class SemanticChange(StrEnum):
+    ADDED = "added"
+    CHANGED = "changed"
+    REMOVED = "removed"
+    UNCHANGED = "unchanged"
+    UNCERTAIN = "uncertain"
+
+
+class DrawingRevision(Contract):
+    schema_version: Literal["drawing-revision.v1"] = "drawing-revision.v1"
+    revision_id: Identifier
+    session_id: Identifier
+    number: int = Field(ge=1)
+    batch_id: Identifier
+    based_on_world_version: int = Field(ge=0)
+    status: Literal["awaiting_grounding", "resolved"]
+    created_at: datetime
+
+
+class ReconciliationCandidate(Contract):
+    candidate_id: Identifier
+    revision_id: Identifier
+    change: SemanticChange
+    kind: ObservationKind
+    current_ref: Identifier | None = None
+    current_value: dict[str, JsonValue] | None = None
+    observation_id: Identifier | None = None
+    proposed_value: dict[str, JsonValue] | None = None
+    requires_grounding: bool
+    decision: Literal["confirm", "reject", "correct", "skip"] | None = None
+
+
+class GroundingPrompt(Contract):
+    candidate_id: Identifier
+    action: Literal["confirm_or_correct"] = "confirm_or_correct"
+    change: SemanticChange
+    kind: ObservationKind
+
+
+class RevisionState(Contract):
+    revision: DrawingRevision
+    candidates: list[ReconciliationCandidate]
+    prompts: list[GroundingPrompt]
+    world: WorldState
+
+
+class CandidateDecision(Contract):
+    candidate_id: Identifier
+    action: Literal["confirm", "reject", "correct", "skip"]
+    supplied_value: dict[str, JsonValue] | None = None
+
+    @model_validator(mode="after")
+    def correction_has_value(self) -> "CandidateDecision":
         if (self.action == "correct") != (self.supplied_value is not None):
             raise ValueError("only correction requires supplied_value")
         return self

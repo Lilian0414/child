@@ -55,6 +55,41 @@ class ObservationBatchRow(Base):
     __table_args__ = (UniqueConstraint("session_id", "batch_id"),)
 
 
+class DrawingRevisionRow(Base):
+    __tablename__ = "drawing_revisions"
+    revision_id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.session_id"), nullable=False)
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    batch_id: Mapped[str] = mapped_column(
+        ForeignKey("observation_batches.batch_id"), nullable=False, unique=True
+    )
+    based_on_world_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("session_id", "number", name="uq_revision_session_number"),
+        UniqueConstraint("session_id", "idempotency_key", name="uq_revision_session_key"),
+        CheckConstraint("number > 0"),
+    )
+
+
+class ReconciliationCandidateRow(Base):
+    __tablename__ = "reconciliation_candidates"
+    candidate_id: Mapped[str] = mapped_column(String, primary_key=True)
+    revision_id: Mapped[str] = mapped_column(
+        ForeignKey("drawing_revisions.revision_id"), nullable=False
+    )
+    change: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    current_ref: Mapped[str | None] = mapped_column(String)
+    current_value: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    observation_id: Mapped[str | None] = mapped_column(String)
+    proposed_value: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    requires_grounding: Mapped[bool] = mapped_column(nullable=False)
+    decision: Mapped[str | None] = mapped_column(String)
+
+
 class ObservationRow(Base):
     __tablename__ = "observations"
     observation_id: Mapped[str] = mapped_column(String, primary_key=True)
