@@ -24,6 +24,7 @@ from child_agent_api.domain.models import (
     ObservationBatch,
     ObservationDecision,
     RevisionState,
+    Session,
     StoryGrounding,
     StoryState,
 )
@@ -204,6 +205,12 @@ def restore_session(session_id: str, service: Service) -> FlowView:
     return current_view(session_id, service)
 
 
+@app.get("/v1/sessions/{session_id}/state", response_model=Session)
+def restore_session_state(session_id: str, service: Service) -> Session:
+    """Return canonical persisted session lifecycle state independently of fixture UI."""
+    return service.get_session(session_id)
+
+
 @app.get("/v1/sessions/{session_id}/story", response_model=StoryState)
 def restore_story(session_id: str, service: Service) -> StoryState:
     return service.get_story(session_id)
@@ -229,6 +236,13 @@ def ground_story(
 @app.get("/v1/sessions/{session_id}/story/full", response_model=FullStory)
 def full_story(session_id: str, service: Service) -> FullStory:
     return service.full_story(session_id)
+
+
+@app.post("/v1/sessions/{session_id}/story/complete", response_model=FullStory)
+def complete_story(session_id: str, body: MutationRequest, service: Service) -> FullStory:
+    return service.complete_story(
+        session_id, body.expected_state_version, body.idempotency_key
+    )
 
 
 @app.post(
