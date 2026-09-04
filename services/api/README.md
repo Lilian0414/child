@@ -26,5 +26,7 @@ Live evaluation is deliberately opt-in and is never part of `make check`:
 uv run --project services/api python -m child_agent_api.benchmark --provider live
 ```
 
-Without all three variables (and an operator media runner), this command exits explicitly
-as `not run`; it never substitutes fake-provider results for live evidence.
+The live command sends the same 12 valid, repository-owned synthetic SVG fixtures through
+the configured adapter. Without all three variables it exits explicitly as `not run`; it
+never substitutes fake-provider results for live evidence. CI runs only the offline fake
+provider benchmark.

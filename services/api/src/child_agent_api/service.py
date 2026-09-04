@@ -17,6 +17,7 @@ from child_agent_api.domain.models import (
     Fact,
     ObservationBatch,
     ObservationDecision,
+    ObservationItem,
     Provenance,
     ProvenanceSource,
     Relationship,
@@ -25,7 +26,12 @@ from child_agent_api.domain.models import (
     WorldObject,
     WorldState,
 )
-from child_agent_api.observer import ImageInput, ObservationPipeline, ObserverResult
+from child_agent_api.observer import (
+    OBSERVER_PROMPT_VERSION,
+    ImageInput,
+    ObservationPipeline,
+    ObserverResult,
+)
 from child_agent_api.persistence.models import (
     EventRow,
     IdempotencyRow,
@@ -123,11 +129,81 @@ class WorldStateService:
         timeout_seconds: float = 10,
     ) -> tuple[WorldState, ObserverResult]:
         """Persist only after the complete provider/schema/policy boundary succeeds."""
+        committed = self._preflight_observation(
+            session_id, batch_id, expected_state_version, idempotency_key, pipeline
+        )
+        if committed is not None:
+            return committed
         result = pipeline.run(image, batch_id=batch_id, timeout_seconds=timeout_seconds)
         world = self.record_observations(
             session_id, result.batch, expected_state_version, idempotency_key
         )
         return world, result
+
+    def _preflight_observation(
+        self,
+        session_id: str,
+        batch_id: str,
+        expected: int,
+        key: str,
+        pipeline: ObservationPipeline,
+    ) -> tuple[WorldState, ObserverResult] | None:
+        """Resolve committed retries and stale requests before external model work."""
+        with DbSession(self.engine) as db:
+            duplicate = db.scalar(
+                select(IdempotencyRow).where(
+                    IdempotencyRow.session_id == session_id, IdempotencyRow.key == key
+                )
+            )
+            if duplicate is not None:
+                batch_row = db.get(ObservationBatchRow, batch_id)
+                if batch_row is None or batch_row.session_id != session_id:
+                    raise InvalidReferenceError("idempotency key belongs to another mutation")
+                rows = list(
+                    db.scalars(
+                        select(ObservationRow)
+                        .where(ObservationRow.batch_id == batch_id)
+                        .order_by(ObservationRow.observation_id)
+                    )
+                )
+                batch = ObservationBatch(
+                    schema_version="observation.v1",
+                    batch_id=batch_id,
+                    media_id=batch_row.media_id,
+                    items=[
+                        ObservationItem.model_validate(
+                            {
+                                "observation_id": row.observation_id,
+                                "kind": row.kind,
+                                "candidate": row.candidate,
+                                "confidence": row.confidence,
+                                "needs_confirmation": row.needs_confirmation,
+                                "evidence_note": row.evidence_note,
+                                "status": "proposed",
+                                "source": "model_observation",
+                            },
+                            strict=False,
+                        )
+                        for row in rows
+                    ],
+                )
+                return (
+                    WorldState.model_validate(duplicate.result, strict=False),
+                    ObserverResult(
+                        batch=batch,
+                        provider=pipeline.provider.provider_id,
+                        model=pipeline.provider.model_id,
+                        prompt_version=OBSERVER_PROMPT_VERSION,
+                        repair_used=False,
+                        latency_ms=0,
+                    ),
+                )
+            session = db.get(SessionRow, session_id)
+            if session is None:
+                raise NotFoundError("session does not exist")
+            if session.state_version != expected:
+                raise VersionConflictError(expected, session.state_version)
+        return None
 
     def decide_observation(
         self,

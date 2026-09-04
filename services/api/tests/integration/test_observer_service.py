@@ -120,3 +120,41 @@ def test_timeout_preserves_already_confirmed_world(service: WorldStateService) -
             idempotency_key="retry",
         )
     assert service.get_world("ses_synthetic") == confirmed
+
+
+def test_committed_observation_retry_does_not_call_provider_or_advance_state(
+    service: WorldStateService, engine: object
+) -> None:
+    raw = {
+        "items": [
+            {
+                "observation_id": "obs_retry",
+                "kind": "object",
+                "candidate": {"label": "kite"},
+                "confidence": 0.8,
+            }
+        ]
+    }
+    first_provider = FakeObserverProvider(json.dumps(raw))
+    first_world, first_result = service.observe_and_record(
+        "ses_synthetic",
+        ObservationPipeline(first_provider),
+        ImageInput("med_retry", b"x", "image/png"),
+        batch_id="obsb_retry",
+        expected_state_version=0,
+        idempotency_key="observe-retry",
+    )
+    retry_provider = FakeObserverProvider("", error=AssertionError("provider called on retry"))
+    retry_world, retry_result = service.observe_and_record(
+        "ses_synthetic",
+        ObservationPipeline(retry_provider),
+        ImageInput("med_retry", b"x", "image/png"),
+        batch_id="obsb_retry",
+        expected_state_version=0,
+        idempotency_key="observe-retry",
+    )
+    assert retry_provider.observe_calls == 0
+    assert retry_world == first_world
+    assert retry_result.batch == first_result.batch
+    with Session(engine) as db:  # type: ignore[arg-type]
+        assert db.scalar(select(func.count()).select_from(EventRow)) == 1

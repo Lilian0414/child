@@ -40,7 +40,7 @@ def _facts(items: list[Any]) -> set[str]:
     }
 
 
-def run_fixture(case: dict[str, Any]) -> CaseResult:
+def run_fixture(case: dict[str, Any], fixture_root: Path) -> CaseResult:
     error = TimeoutError("synthetic timeout") if case.get("provider_error") == "timeout" else None
     provider = FakeObserverProvider(
         json.dumps(case.get("response"))
@@ -55,8 +55,9 @@ def run_fixture(case: dict[str, Any]) -> CaseResult:
     )
     expected = set(case.get("expected_facts", []))
     try:
+        media_path = fixture_root / case["media_file"]
         result = ObservationPipeline(provider).run(
-            ImageInput(case["media_id"], f"synthetic:{case['case_id']}".encode(), "image/svg+xml"),
+            ImageInput(case["media_id"], media_path.read_bytes(), "image/svg+xml"),
             batch_id=f"obsb_{case['case_id'].lower().replace('-', '_')}",
             timeout_seconds=1,
         )
@@ -94,6 +95,50 @@ def run_fixture(case: dict[str, Any]) -> CaseResult:
         )
 
 
+def run_live(
+    case: dict[str, Any], provider: OpenAICompatibleObserver, fixture_root: Path
+) -> CaseResult:
+    expected = set(case.get("expected_facts", []))
+    try:
+        media_path = fixture_root / case["media_file"]
+        result = ObservationPipeline(provider).run(
+            ImageInput(case["media_id"], media_path.read_bytes(), "image/svg+xml"),
+            batch_id=f"obsb_{case['case_id'].lower().replace('-', '_')}",
+            timeout_seconds=30,
+        )
+        actual = _facts(result.batch.items)
+        return CaseResult(
+            case["case_id"],
+            result.provider,
+            result.model,
+            True,
+            result.repair_used,
+            result.latency_ms,
+            None,
+            [],
+            sorted(expected & actual),
+            sorted(expected - actual),
+            all(
+                item.needs_confirmation and item.status.value == "proposed"
+                for item in result.batch.items
+            ),
+        )
+    except ObserverFailure as failure:
+        return CaseResult(
+            case["case_id"],
+            provider.provider_id,
+            provider.model_id,
+            False,
+            failure.repair_used,
+            0,
+            failure.category.value,
+            [str(failure)] if failure.category.value == "policy_violation" else [],
+            [],
+            sorted(expected),
+            True,
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--provider", choices=("fake", "live"), default="fake")
@@ -107,15 +152,14 @@ def main() -> None:
         missing = [name for name in required if not os.getenv(name)]
         if missing:
             parser.error(f"live benchmark not run; missing: {', '.join(missing)}")
-        # Constructing the isolated adapter validates configuration. Live fixture execution is
-        # intentionally explicit and cannot silently fall back to deterministic evidence.
-        OpenAICompatibleObserver(
+        provider = OpenAICompatibleObserver(
             api_key=os.environ[required[0]],
             model=os.environ[required[1]],
             base_url=os.environ[required[2]],
         )
-        parser.error("live benchmark requires an operator-supplied media runner; not run")
-    results = [run_fixture(case) for case in cases]
+        results = [run_live(case, provider, fixture_path.parent) for case in cases]
+    else:
+        results = [run_fixture(case, fixture_path.parent) for case in cases]
     payload = {
         "benchmark_version": "observer-benchmark.v1",
         "fixture_count": len(cases),
@@ -130,7 +174,7 @@ def main() -> None:
     )
     args.markdown.write_text(
         "# Observer benchmark\n\n"
-        f"Provider: `fake/deterministic-v1`  \nCases: {len(cases)}  \n"
+        f"Provider: `{results[0].provider}/{results[0].model}`  \nCases: {len(cases)}  \n"
         f"Expected outcomes: {passed}/{len(cases)}\n\n"
         + "| Case | Schema | Repair | Error | Tentative |\n|---|---:|---:|---|---:|\n"
         + "".join(
