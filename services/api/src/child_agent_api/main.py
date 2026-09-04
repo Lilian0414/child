@@ -18,6 +18,12 @@ from child_agent_api.domain.models import AccessibilityProfile, ObservationDecis
 from child_agent_api.fixture_flow import FlowView, build_view, observation_batch, observation_id
 from child_agent_api.persistence.database import create_database_engine
 from child_agent_api.providers.tts_elevenlabs import TTSError, synthesize_speech
+from child_agent_api.revisions import (
+    DrawingRevision,
+    RevisionResolution,
+    RevisionResult,
+    RevisionSubmission,
+)
 from child_agent_api.service import WorldStateService
 
 DEFAULT_CORS_ORIGINS = "http://localhost:5173"
@@ -151,6 +157,37 @@ def create_session(body: CreateSessionRequest, service: Service) -> FlowView:
 def restore_session(session_id: str, service: Service) -> FlowView:
     service.get_session(session_id)
     return current_view(session_id, service)
+
+
+@app.post(
+    "/v1/sessions/{session_id}/drawing-revisions",
+    response_model=DrawingRevision,
+    status_code=201,
+)
+def submit_drawing_revision(
+    session_id: str, body: RevisionSubmission, service: Service
+) -> DrawingRevision:
+    return service.submit_revision(session_id, body)
+
+
+@app.get(
+    "/v1/sessions/{session_id}/drawing-revisions/{revision_id}",
+    response_model=DrawingRevision,
+)
+def retrieve_drawing_revision(
+    session_id: str, revision_id: str, service: Service
+) -> DrawingRevision:
+    return service.get_revision(session_id, revision_id)
+
+
+@app.post(
+    "/v1/sessions/{session_id}/drawing-revisions/{revision_id}/decisions",
+    response_model=RevisionResult,
+)
+def resolve_drawing_revision(
+    session_id: str, revision_id: str, body: RevisionResolution, service: Service
+) -> RevisionResult:
+    return service.resolve_revision(session_id, revision_id, body)
 
 
 @app.post("/v1/sessions/{session_id}/fixture", response_model=FlowView)

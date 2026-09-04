@@ -13,6 +13,7 @@ def test_empty_database_upgrades_to_head(tmp_path: Path) -> None:
     command.upgrade(config, "head")
     assert set(inspect(create_engine(f"sqlite:///{database}")).get_table_names()) == {
         "alembic_version",
+        "drawing_revisions",
         "events",
         "idempotency_records",
         "observation_batches",

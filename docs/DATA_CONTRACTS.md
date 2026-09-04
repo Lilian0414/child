@@ -165,6 +165,34 @@ Allowed `action`: `confirm`, `reject`, `correct`, `skip`. A skipped high-semanti
 
 Corrections create a new state version. Any `story_derived` fact whose `depends_on` includes a corrected fact becomes stale before the next scene.
 
+## 5.1 Drawing revisions and reconciliation
+
+A drawing revision stores its order within the session, the canonical world version it was
+reconciled against, and the validated `ObserverPayload` that produced its candidates. Revision
+ingress uses the same kind-discriminated allowlist as the observer adapter; clients cannot send
+canonical status, source, identity, or provenance fields through this route.
+
+Reconciliation classifies proposals as `added`, `changed`, `removed`, `unchanged`, or
+`uncertain`. Confirmed exact matches remain unchanged and are not asked again. At most five
+unresolved candidates become grounding prompts. Visible `object` and `object_count` proposals
+may be confirmed directly. `character`, `fact`, and `relationship` observations do not contain
+enough canonical identity/reference data, so they allow only child correction/supply, rejection,
+or skip.
+
+Resolving a revision accepts `confirm`, `correct`, `reject`, and `skip` decisions. A correction
+uses an allowlisted canonical value and child-supplied provenance. Rejection and skip do not
+promote model output. Removal retains a tombstone identifier and immutable event history rather
+than erasing provenance. A successful resolution advances the canonical world exactly once;
+duplicate retries return the stored result. If the current world no longer equals the revision's
+base version, the revision becomes `superseded` with no world or event effect, after which a new
+revision may be submitted against the current version.
+
+Core revision routes are:
+
+- `POST /v1/sessions/{id}/drawing-revisions`
+- `GET /v1/sessions/{id}/drawing-revisions/{revision_id}`
+- `POST /v1/sessions/{id}/drawing-revisions/{revision_id}/decisions`
+
 ## 6. Story plan, scene and choice
 
 ```json

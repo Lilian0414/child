@@ -105,3 +105,23 @@ class IdempotencyRow(Base):
     key: Mapped[str] = mapped_column(String, nullable=False)
     result: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     __table_args__ = (UniqueConstraint("session_id", "key", name="uq_idempotency_session_key"),)
+
+
+class DrawingRevisionRow(Base):
+    __tablename__ = "drawing_revisions"
+    revision_id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.session_id"), nullable=False)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    base_world_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    media_id: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    submission_key: Mapped[str] = mapped_column(String, nullable=False)
+    resolution_key: Mapped[str | None] = mapped_column(String)
+    state: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    result: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    __table_args__ = (
+        UniqueConstraint("session_id", "revision_number", name="uq_revision_order"),
+        UniqueConstraint("session_id", "submission_key", name="uq_revision_submission_key"),
+        CheckConstraint("revision_number > 0"),
+        CheckConstraint("base_world_version >= 0"),
+    )

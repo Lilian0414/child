@@ -125,20 +125,26 @@ class WorldState(Contract):
     relationships: list[Relationship] = Field(default_factory=list)
     facts: list[Fact] = Field(default_factory=list)
     stale_fact_ids: list[Identifier] = Field(default_factory=list)
+    removed_entity_ids: list[Identifier] = Field(default_factory=list)
+    removed_fact_ids: list[Identifier] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def valid_references(self) -> "WorldState":
-        entity_ids = {x.character_id for x in self.characters} | {x.object_id for x in self.objects}
-        fact_ids = {x.fact_id for x in self.facts}
+        active_entity_ids = {x.character_id for x in self.characters} | {
+            x.object_id for x in self.objects
+        }
+        entity_ids = active_entity_ids | set(self.removed_entity_ids)
+        fact_ids = {x.fact_id for x in self.facts} | set(self.removed_fact_ids)
         all_ids = entity_ids | fact_ids
         if any(f.subject_ref not in all_ids for f in self.facts):
             raise ValueError("fact subject reference does not exist")
         if any(dep not in fact_ids for fact in self.facts for dep in fact.depends_on):
             raise ValueError("fact dependency reference does not exist")
-        if not set(self.stale_fact_ids) <= fact_ids:
+        if not set(self.stale_fact_ids) <= {x.fact_id for x in self.facts}:
             raise ValueError("stale fact reference does not exist")
         if any(
-            r.from_ref not in entity_ids or r.to_ref not in entity_ids for r in self.relationships
+            r.from_ref not in active_entity_ids or r.to_ref not in active_entity_ids
+            for r in self.relationships
         ):
             raise ValueError("relationship reference does not exist")
         return self
