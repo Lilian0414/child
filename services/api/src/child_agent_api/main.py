@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from child_agent_api.domain.errors import (
@@ -17,6 +17,7 @@ from child_agent_api.domain.errors import (
 from child_agent_api.domain.models import AccessibilityProfile, ObservationDecision
 from child_agent_api.fixture_flow import FlowView, build_view, observation_batch, observation_id
 from child_agent_api.persistence.database import create_database_engine
+from child_agent_api.providers.tts_elevenlabs import TTSError, synthesize_speech
 from child_agent_api.service import WorldStateService
 
 DEFAULT_CORS_ORIGINS = "http://localhost:5173"
@@ -58,6 +59,10 @@ class ErrorResponse(ApiModel):
     code: str
     message: str
     current_state_version: int | None = None
+
+
+class TTSRequest(ApiModel):
+    text: Annotated[str, Field(min_length=1, max_length=2000)]
 
 
 engine = create_database_engine()
@@ -109,6 +114,18 @@ def domain_error(_request: Request, error: DomainError) -> JSONResponse:
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok", service="child-agent-api", version=app.version)
+
+
+@app.post("/v1/tts")
+def text_to_speech(body: TTSRequest) -> Response:
+    try:
+        audio_bytes = synthesize_speech(body.text)
+    except TTSError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ErrorResponse(code="tts_failed", message=str(error)).model_dump(),
+        )
+    return Response(content=audio_bytes, media_type="audio/mpeg")
 
 
 def current_view(session_id: str, service: WorldStateService) -> FlowView:
