@@ -259,13 +259,10 @@ make check
 
 ## 部署方向
 
-部署是最後一階段，不在 core 完成前提早綁死平台。
-
-- Web：Vercel 優先。
-- API：Vercel Python Functions 若實測可靠；否則小型外部 FastAPI backend。
-- Persistent state：external Postgres。
+- Web + API：都部署在 **Railway**，同一個服務，由 FastAPI 掛載靜態前端一併 serve，避免額外處理 CORS 與多平台管理成本。
+- Persistent state：Railway 內建 Postgres（或 Neon 免費額度）。
 - Drawing / audio：需要真實上傳時使用 private / short-lived object storage。
-- Secrets：只放 server-side environment variables。
+- Secrets：只放 server-side environment variables（Railway Variables）。
 
 最終 hosting / storage 選型以 [#13](https://github.com/futuremodeokok/child/issues/13) 的實際 deployment evidence 為準。
 
