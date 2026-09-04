@@ -165,6 +165,34 @@ Allowed `action`: `confirm`, `reject`, `correct`, `skip`. A skipped high-semanti
 
 Corrections create a new state version. Any `story_derived` fact whose `depends_on` includes a corrected fact becomes stale before the next scene.
 
+## 5.1 Drawing revisions and reconciliation
+
+A drawing revision references a validated `ObservationBatch`; it never contains image bytes or
+provider payloads. Revisions are ordered per session and record the canonical world version used
+for reconciliation. Submitting proposals does not advance that world version. Grounding the
+revision is one atomic, idempotent world transition.
+
+Reconciliation candidates use `added`, `changed`, `removed`, `unchanged`, or `uncertain` and retain
+both the prior canonical reference/value and the proposed observation/value when applicable.
+`unchanged` child-confirmed meanings remain canonical and are excluded from grounding prompts.
+The deterministic policy returns at most five prompts, prioritizing changed and removed meanings;
+unasked or skipped proposals remain non-canonical. Decisions are `confirm`, `correct`, `reject`, or
+`skip`. Removed IDs are retained as tombstone references so immutable history and stale derived
+dependencies remain valid without exposing the removed item as current canonical state.
+
+The revision API accepts the same kind-discriminated, allowlisted observer item DTOs as the live
+Observer boundary. Canonical status, provenance, identity and relationship references cannot be
+submitted as model-controlled observation fields. Visible `object` and `object_count` proposals
+can be confirmed into canonical objects. `character`, `fact`, and `relationship` observations do
+not contain enough child-grounded identity/reference information to be confirmed directly, so
+their prompts allow only correction (child-supplied canonical meaning), rejection, or skipping.
+Confirming a removal remains allowed because it refers to an existing canonical item.
+
+An awaiting revision is valid only while the world remains at `based_on_world_version`. If another
+mutation advances the world before resolution, the resolution attempt marks the revision
+`superseded` without applying candidates or advancing the world, clears its prompts, and permits a
+fresh revision to be submitted against the current version.
+
 ## 6. Story plan, scene and choice
 
 ```json
@@ -266,6 +294,9 @@ Payloads containing child text should follow the retention/redaction policy in [
 |---|---|---|
 | `POST` | `/v1/sessions` | Create setup/profile |
 | `POST` | `/v1/sessions/{id}/drawing` | Validate and attach one drawing |
+| `POST` | `/v1/sessions/{id}/drawing-revisions` | Submit a revision observation batch for reconciliation |
+| `GET` | `/v1/sessions/{id}/drawing-revisions/{revision_id}` | Restore revision, candidates, prompts and world |
+| `POST` | `/v1/sessions/{id}/drawing-revisions/{revision_id}/decisions` | Atomically ground selected revision changes |
 | `GET` | `/v1/sessions/{id}/next` | Get current child-facing action or scene |
 | `POST` | `/v1/sessions/{id}/answers` | Submit grounding answer |
 | `POST` | `/v1/sessions/{id}/choices` | Submit story choice |

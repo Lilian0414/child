@@ -14,8 +14,15 @@ from child_agent_api.domain.errors import (
     NotFoundError,
     VersionConflictError,
 )
-from child_agent_api.domain.models import AccessibilityProfile, ObservationDecision
+from child_agent_api.domain.models import (
+    AccessibilityProfile,
+    CandidateDecision,
+    ObservationBatch,
+    ObservationDecision,
+    RevisionState,
+)
 from child_agent_api.fixture_flow import FlowView, build_view, observation_batch, observation_id
+from child_agent_api.observer import ObserverItem, ObserverPayload
 from child_agent_api.persistence.database import create_database_engine
 from child_agent_api.providers.tts_elevenlabs import TTSError, synthesize_speech
 from child_agent_api.service import WorldStateService
@@ -53,6 +60,32 @@ class GroundingRequest(MutationRequest):
 
 class ChoiceRequest(MutationRequest):
     choice_id: Literal["choice_ask", "choice_tease", "choice_invite", "choice_give_space"]
+
+
+class SubmitRevisionRequest(MutationRequest):
+    revision_id: Annotated[str, Field(pattern=r"^rev_[A-Za-z0-9_-]+$")]
+    observations: "RevisionObservationBatch"
+
+
+class RevisionObservationBatch(ApiModel):
+    schema_version: Literal["observation.v1"]
+    batch_id: Annotated[str, Field(pattern=r"^obsb_[A-Za-z0-9_-]+$")]
+    media_id: Annotated[str, Field(pattern=r"^med_[A-Za-z0-9_-]+$")]
+    items: list[ObserverItem] = Field(min_length=1, max_length=30)
+
+    def to_domain(self) -> ObservationBatch:
+        return ObservationBatch.model_validate(
+            {
+                **self.model_dump(),
+                "items": ObserverPayload(items=self.items).to_domain_items(),
+            },
+            strict=False,
+        )
+
+
+class ResolveRevisionRequest(MutationRequest):
+    command_id: Annotated[str, Field(pattern=r"^ans_[A-Za-z0-9_-]+$")]
+    decisions: list[CandidateDecision] = Field(min_length=1, max_length=5)
 
 
 class ErrorResponse(ApiModel):
@@ -151,6 +184,51 @@ def create_session(body: CreateSessionRequest, service: Service) -> FlowView:
 def restore_session(session_id: str, service: Service) -> FlowView:
     service.get_session(session_id)
     return current_view(session_id, service)
+
+
+@app.post(
+    "/v1/sessions/{session_id}/drawing-revisions",
+    response_model=RevisionState,
+    status_code=201,
+)
+def submit_revision(
+    session_id: str, body: SubmitRevisionRequest, service: Service
+) -> RevisionState:
+    return service.submit_revision(
+        session_id,
+        body.revision_id,
+        body.observations.to_domain(),
+        body.expected_state_version,
+        body.idempotency_key,
+    )
+
+
+@app.get(
+    "/v1/sessions/{session_id}/drawing-revisions/{revision_id}",
+    response_model=RevisionState,
+)
+def get_revision(session_id: str, revision_id: str, service: Service) -> RevisionState:
+    return service.get_revision(session_id, revision_id)
+
+
+@app.post(
+    "/v1/sessions/{session_id}/drawing-revisions/{revision_id}/decisions",
+    response_model=RevisionState,
+)
+def resolve_revision(
+    session_id: str,
+    revision_id: str,
+    body: ResolveRevisionRequest,
+    service: Service,
+) -> RevisionState:
+    return service.resolve_revision(
+        session_id,
+        revision_id,
+        body.decisions,
+        body.command_id,
+        body.expected_state_version,
+        body.idempotency_key,
+    )
 
 
 @app.post("/v1/sessions/{session_id}/fixture", response_model=FlowView)
