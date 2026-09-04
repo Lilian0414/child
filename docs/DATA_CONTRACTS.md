@@ -208,6 +208,13 @@ supersedes an older pending proposal, even when all of its dependency IDs remain
 grounded drawing revision also marks accepted segments stale when it changes or removes a
 dependency's meaning; canonical ID reuse does not preserve semantically outdated story content.
 
+After any grounded current segment, the Core supports three lifecycle branches: request another
+proposal, revise the same drawing/world, or explicitly complete the story with
+`POST /v1/sessions/{id}/story/complete`. Completion rejects a pending proposal rather than silently
+accepting it, advances canonical state once, and persists `SessionStatus.COMPLETE`. Clients restore
+that lifecycle value from the typed `GET /v1/sessions/{id}/state` contract; the existing fixture
+session view remains unchanged. Presentation of these branches is outside the Core contract.
+
 ```json
 {
   "plan_id": "plan_01",
