@@ -208,6 +208,41 @@ supersedes an older pending proposal, even when all of its dependency IDs remain
 grounded drawing revision also marks accepted segments stale when it changes or removes a
 dependency's meaning; canonical ID reuse does not preserve semantically outdated story content.
 
+After any grounded current segment, Core exposes three lifecycle intents without defining their
+presentation: continue through the existing proposal flow, revise the same world through the
+existing drawing-revision flow, or complete through
+`POST /v1/sessions/{id}/story/complete`. Completion requires `expected_state_version` and an
+`idempotency_key`, advances canonical state once, records an immutable `STORY_COMPLETED` event,
+sets the existing session status to `COMPLETE`, and returns the canonical `full-story.v1`
+projection. A retry with the same key returns that committed projection without another event or
+version advance; a stale version conflicts normally. Completion never invokes a story provider.
+
+Completion is rejected while a story proposal is pending: the child must first accept, correct,
+or redirect that proposal. It is not silently accepted or included. Completion is also rejected
+unless at least one current grounded segment remains. The final projection includes only current
+grounded segments, so pending, rejected, superseded, unconfirmed, and dependency-invalidated
+content remains excluded. Completed sessions cannot continue or revise their canonical state.
+
+```text
+Drawing / World Grounding
+        ↓
+Canonical World
+        ↓
+Short Story Proposal
+        ↓
+Child accept / correct / redirect
+        ↓
+Canonical Story Segment
+        ↓
+Next intent:
+  - Continue story  → existing story proposal flow
+  - Revise drawing  → existing drawing revision flow
+  - Complete story  → explicit completion transition
+```
+
+These are Core transitions, not requirements for buttons, speech, gestures, cards, or any other
+frontend or multimodal control.
+
 ```json
 {
   "plan_id": "plan_01",

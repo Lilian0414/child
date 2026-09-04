@@ -102,7 +102,10 @@ Story Agent 每次只提出一小段 story proposal。孩子可以接受、修�
 8. 系統只詢問真正重要的新變化。
 9. 下一段故事同時尊重先前修正與最新畫作變化。
 10. Refresh / retry 不會遺失或重複已提交的狀態。
-11. 最後可取得 canonical full story，供完整閱讀或播放。
+11. 每段 grounded story 後可沿用既有流程繼續故事或修改同一幅畫作/world，也可透過明確、
+    idempotent 的 completion transition 完成故事；Core 不規定 UI 或多模態呈現方式。
+12. 完成後可取得只包含 current grounded segments 的 canonical full story，供完整閱讀或播放；
+    pending proposal 必須先完成 grounding，不能被默認納入。
 
 不做的事情同樣重要：不從兒童畫作推論心理疾病、人格或隱藏動機；不把 AI observation 當成真相；不靠 generated illustration / video / animation 當主要賣點；不把黑客松 scope 擴張成帳號平台或長期兒童 profile。
 

@@ -1,5 +1,7 @@
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session as DbSession
 
 from child_agent_api.domain.errors import InvalidReferenceError, VersionConflictError
 from child_agent_api.domain.models import (
@@ -10,6 +12,7 @@ from child_agent_api.domain.models import (
     ObservationKind,
     StoryGrounding,
 )
+from child_agent_api.persistence.models import EventRow
 from child_agent_api.service import WorldStateService
 from child_agent_api.story import StoryProviderResult
 
@@ -142,6 +145,51 @@ def test_story_grounding_is_idempotent_and_rejects_stale_version(
     )
     with pytest.raises(VersionConflictError):
         service.request_story_proposal("ses_synthetic", 0)
+
+
+def test_completion_is_idempotent_persisted_and_rejects_stale_version(
+    service: WorldStateService, engine: object
+) -> None:
+    proposal = service.request_story_proposal("ses_synthetic", 0).current_proposal
+    assert proposal is not None
+    service.ground_story_proposal(
+        "ses_synthetic", proposal.proposal_id, StoryGrounding(action="accept"), 0, "ground-first"
+    )
+
+    completed = service.complete_story("ses_synthetic", 1, "complete-once")
+    assert completed.state_version == 2
+    assert completed.text == proposal.text
+    assert service.complete_story("ses_synthetic", 1, "complete-once") == completed
+    assert WorldStateService(engine).get_session("ses_synthetic").status == "COMPLETE"  # type: ignore[arg-type]
+    assert WorldStateService(engine).full_story("ses_synthetic") == completed  # type: ignore[arg-type]
+    with DbSession(engine) as db:  # type: ignore[arg-type]
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(EventRow)
+                .where(EventRow.event_type == "STORY_COMPLETED")
+            )
+            == 1
+        )
+    with pytest.raises(VersionConflictError):
+        service.complete_story("ses_synthetic", 1, "different-completion")
+
+
+def test_completion_rejects_pending_proposal_without_accepting_it(
+    service: WorldStateService,
+) -> None:
+    first = service.request_story_proposal("ses_synthetic", 0).current_proposal
+    assert first is not None
+    service.ground_story_proposal(
+        "ses_synthetic", first.proposal_id, StoryGrounding(action="accept"), 0, "ground-first"
+    )
+    pending = service.request_story_proposal("ses_synthetic", 1).current_proposal
+    assert pending is not None
+
+    with pytest.raises(InvalidReferenceError, match="must be grounded"):
+        service.complete_story("ses_synthetic", 1, "complete-with-pending")
+    assert service.get_story("ses_synthetic").current_proposal == pending
+    assert service.full_story("ses_synthetic").text == first.text
 
 
 def test_provider_failure_commits_no_proposal(service: WorldStateService) -> None:

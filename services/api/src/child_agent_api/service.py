@@ -167,6 +167,8 @@ class WorldStateService:
                 raise NotFoundError("session does not exist")
             if session.state_version != expected_state_version:
                 raise VersionConflictError(expected_state_version, session.state_version)
+            if session.status == SessionStatus.COMPLETE:
+                raise InvalidReferenceError("completed session cannot be revised")
             if db.get(DrawingRevisionRow, revision_id) is not None:
                 raise InvalidReferenceError("revision already exists")
             if db.get(ObservationBatchRow, batch.batch_id) is not None:
@@ -360,6 +362,8 @@ class WorldStateService:
             world_row = db.get(WorldSnapshotRow, session_id)
             if session is None or snapshot is None or world_row is None:
                 raise NotFoundError("session does not exist")
+            if session.status == SessionStatus.COMPLETE:
+                raise InvalidReferenceError("completed session cannot continue")
             if session.state_version != expected_state_version:
                 raise VersionConflictError(expected_state_version, session.state_version)
             story = StoryState.model_validate(snapshot.state, strict=False)
@@ -500,6 +504,90 @@ class WorldStateService:
             text="\n".join(x.text for x in segments),
             segment_ids=[x.segment_id for x in segments],
         )
+
+    def complete_story(
+        self,
+        session_id: str,
+        expected_state_version: int,
+        idempotency_key: str,
+    ) -> FullStory:
+        """Complete a grounded story without generating or accepting any content."""
+        with DbSession(self.engine) as db, db.begin():
+            duplicate = db.scalar(
+                select(IdempotencyRow).where(
+                    IdempotencyRow.session_id == session_id,
+                    IdempotencyRow.key == idempotency_key,
+                )
+            )
+            if duplicate is not None:
+                return FullStory.model_validate(duplicate.result, strict=False)
+
+            session = db.get(SessionRow, session_id)
+            story_row = db.get(StorySnapshotRow, session_id)
+            world_row = db.get(WorldSnapshotRow, session_id)
+            if session is None or story_row is None or world_row is None:
+                raise NotFoundError("session does not exist")
+            if session.state_version != expected_state_version:
+                raise VersionConflictError(expected_state_version, session.state_version)
+            if session.status == SessionStatus.COMPLETE:
+                raise InvalidReferenceError("story is already complete")
+
+            story = StoryState.model_validate(story_row.state, strict=False)
+            if story.current_proposal is not None:
+                raise InvalidReferenceError("pending story proposal must be grounded first")
+            segments = sorted(
+                (segment for segment in story.segments if segment.status == "current"),
+                key=lambda segment: segment.index,
+            )
+            if not segments:
+                raise InvalidReferenceError("story requires a grounded current segment")
+
+            next_version = expected_state_version + 1
+            story.state_version = next_version
+            world = WorldState.model_validate(world_row.state, strict=False)
+            world.version = next_version
+            result = FullStory(
+                session_id=session_id,
+                state_version=next_version,
+                text="\n".join(segment.text for segment in segments),
+                segment_ids=[segment.segment_id for segment in segments],
+            )
+            completion_ref = f"completion_{uuid4().hex}"
+            sequence = (
+                db.scalar(
+                    select(func.max(EventRow.sequence)).where(EventRow.session_id == session_id)
+                )
+                or 0
+            ) + 1
+            db.add(
+                EventRow(
+                    event_id=f"evt_{uuid4().hex}",
+                    session_id=session_id,
+                    sequence=sequence,
+                    event_type="STORY_COMPLETED",
+                    state_version_before=expected_state_version,
+                    state_version_after=next_version,
+                    actor="child",
+                    payload_ref=completion_ref,
+                    created_at=datetime.now(UTC),
+                )
+            )
+            session.status = SessionStatus.COMPLETE
+            session.state_version = next_version
+            story_row.state_version = next_version
+            story_row.state = story.model_dump(mode="json")
+            world_row.version = next_version
+            world_row.state = world.model_dump(mode="json")
+            db.add(
+                IdempotencyRow(
+                    session_id=session_id,
+                    key=idempotency_key,
+                    result=result.model_dump(mode="json"),
+                )
+            )
+            if self.before_commit is not None:
+                self.before_commit()
+            return result
 
     def _revision_state(self, db: DbSession, row: DrawingRevisionRow) -> RevisionState:
         snapshot = db.get(WorldSnapshotRow, row.session_id)
@@ -890,6 +978,8 @@ class WorldStateService:
             snapshot = db.get(WorldSnapshotRow, session_id)
             if session is None or snapshot is None:
                 raise NotFoundError("session does not exist")
+            if session.status == SessionStatus.COMPLETE:
+                raise InvalidReferenceError("completed session cannot be mutated")
             if session.state_version != expected:
                 raise VersionConflictError(expected, session.state_version)
             world, event_type, actor, payload_ref = change(

@@ -231,6 +231,11 @@ def full_story(session_id: str, service: Service) -> FullStory:
     return service.full_story(session_id)
 
 
+@app.post("/v1/sessions/{session_id}/story/complete", response_model=FullStory)
+def complete_story(session_id: str, body: MutationRequest, service: Service) -> FullStory:
+    return service.complete_story(session_id, body.expected_state_version, body.idempotency_key)
+
+
 @app.post(
     "/v1/sessions/{session_id}/drawing-revisions",
     response_model=RevisionState,
