@@ -201,6 +201,13 @@ Proposals are provider-neutral and do not advance state until the child accepts,
 redirects them. `GET /v1/sessions/{id}/story/full` deterministically joins current (non-stale)
 segments; rejected, superseded, pending, and dependency-invalidated content is excluded.
 
+Story providers return only bounded text and canonical world dependency references. Core assigns
+proposal identity, session identity, canonical status, state version, and segment index after
+validating that provider content against the strict provider DTO. Every canonical version advance
+supersedes an older pending proposal, even when all of its dependency IDs remain active. A
+grounded drawing revision also marks accepted segments stale when it changes or removes a
+dependency's meaning; canonical ID reuse does not preserve semantically outdated story content.
+
 ```json
 {
   "plan_id": "plan_01",
