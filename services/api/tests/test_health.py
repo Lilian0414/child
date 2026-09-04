@@ -16,14 +16,14 @@ def test_health_contract() -> None:
     }
 
 
-def test_local_web_origin_is_allowed() -> None:
+def test_cross_origin_requests_are_not_allowed_by_default() -> None:
+    """The web client is served same-origin by the API, so CORS defaults to none."""
     response = client.options(
         "/health",
         headers={
-            "Origin": "http://localhost:5173",
+            "Origin": "http://localhost:5500",
             "Access-Control-Request-Method": "GET",
         },
     )
 
-    assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "access-control-allow-origin" not in response.headers

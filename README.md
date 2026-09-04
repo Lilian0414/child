@@ -225,17 +225,17 @@ flowchart LR
 
 ## 技術基線
 
-- Web：React、TypeScript、Vite。
+- Web：純 HTML/CSS/JS（`apps/web`），無 build step，由 API 服務同源掛載 serve。
 - API：Python 3.12、FastAPI、Pydantic。
 - Persistence：SQLAlchemy、Alembic；本機 SQLite，公開部署改 external persistent DB。
 - AI boundaries：VLM Observer、Story LLM、TTS 都透過 provider adapter 隔離。
 - Deterministic fallback：repository-owned synthetic fixtures，不依賴外部模型即可跑 regression / rehearsal。
 
-獨立 `dev` branch 已有 VLM / story generation / ElevenLabs TTS prototype，可作為 integration 參考；**不直接 merge 整支 unrelated-history `dev` branch**，需要的能力重新接入目前 FastAPI/domain boundary。
+VLM / story generation / ElevenLabs TTS 的能力已從獨立 `dev` branch 的 prototype 重新接入目前的 FastAPI/domain boundary（見 `services/api/src/child_agent_api/providers/`）。
 
 ## 本機開發
 
-需求：Node.js 24、Python 3.12、[uv](https://docs.astral.sh/uv/)。
+需求：Python 3.12、[uv](https://docs.astral.sh/uv/)。不需要 Node.js——前端是純 HTML/CSS/JS。
 
 ```bash
 make setup
@@ -243,13 +243,9 @@ uv run --project services/api alembic -c services/api/alembic.ini upgrade head
 make dev-api
 ```
 
-另一個 terminal：
+開啟 `http://localhost:8000`——FastAPI 會同源 serve `apps/web`（`index.html` + `style.css` + `app.js`），API 與前端共用同一個埠，不需要另開 terminal，也不會有 CORS 問題。
 
-```bash
-make dev-web
-```
-
-開啟 `http://localhost:5173`。
+`ELEVENLABS_API_KEY`（TTS 用）等 secrets 放在 repo 根目錄的 `.env`，啟動時會自動載入。
 
 完整 deterministic checks：
 

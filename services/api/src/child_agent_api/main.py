@@ -1,12 +1,15 @@
 """FastAPI application and the small public deterministic-demo boundary."""
 
 import os
+from pathlib import Path
 from typing import Annotated, Literal
 from uuid import uuid4
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from child_agent_api.domain.errors import (
@@ -30,7 +33,10 @@ from child_agent_api.persistence.database import create_database_engine
 from child_agent_api.providers.tts_elevenlabs import TTSError, synthesize_speech
 from child_agent_api.service import WorldStateService
 
-DEFAULT_CORS_ORIGINS = "http://localhost:5173"
+REPO_ROOT = Path(__file__).resolve().parents[4]
+load_dotenv(REPO_ROOT / ".env")
+
+DEFAULT_CORS_ORIGINS = ""
 
 
 def cors_origins_from_env() -> list[str]:
@@ -305,3 +311,8 @@ def choose(session_id: str, body: ChoiceRequest, service: Service) -> FlowView:
         session_id, body.choice_id, body.expected_state_version, body.idempotency_key
     )
     return current_view(session_id, service)
+
+
+web_dir = REPO_ROOT / "apps" / "web"
+if web_dir.is_dir():
+    app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
