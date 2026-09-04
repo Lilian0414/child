@@ -1,4 +1,4 @@
-.PHONY: setup dev-api dev-web lint typecheck test build check
+.PHONY: setup dev-api dev-web benchmark-observer lint typecheck test build check
 
 setup:
 	uv sync --project services/api --all-groups --locked
@@ -9,6 +9,9 @@ dev-api:
 
 dev-web:
 	npm run dev --prefix apps/web
+
+benchmark-observer:
+	uv run --project services/api python -m child_agent_api.benchmark
 
 lint:
 	uv run --project services/api ruff check services/api

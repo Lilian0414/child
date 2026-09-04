@@ -25,6 +25,7 @@ from child_agent_api.domain.models import (
     WorldObject,
     WorldState,
 )
+from child_agent_api.observer import ImageInput, ObservationPipeline, ObserverResult
 from child_agent_api.persistence.models import (
     EventRow,
     IdempotencyRow,
@@ -109,6 +110,24 @@ class WorldStateService:
             )
 
         return self._mutate(session_id, expected_state_version, idempotency_key, change)
+
+    def observe_and_record(
+        self,
+        session_id: str,
+        pipeline: ObservationPipeline,
+        image: ImageInput,
+        *,
+        batch_id: str,
+        expected_state_version: int,
+        idempotency_key: str,
+        timeout_seconds: float = 10,
+    ) -> tuple[WorldState, ObserverResult]:
+        """Persist only after the complete provider/schema/policy boundary succeeds."""
+        result = pipeline.run(image, batch_id=batch_id, timeout_seconds=timeout_seconds)
+        world = self.record_observations(
+            session_id, result.batch, expected_state_version, idempotency_key
+        )
+        return world, result
 
     def decide_observation(
         self,
