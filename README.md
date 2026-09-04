@@ -1,38 +1,53 @@
 # Child-Grounded Story Agent
 
-> 不是讓 AI 替孩子完成故事，而是讓故事跟著孩子的畫、說法與修正持續改變。
+> **不是讓 AI 替孩子完成故事，而是讓故事跟著孩子的畫、說法與修正持續改變。**
 
-Child-Grounded Story Agent 是一個以兒童畫作作為持續互動介面的 AI 共創故事系統。AI 不一次決定完整故事，也不把視覺模型的判斷直接當成事實；系統會先提出可見內容的候選觀察，交由孩子確認、否定或修正，再把確認後的資訊寫入 canonical world state。
+Child-Grounded Story Agent 是一個以兒童畫作作為持續互動介面的 AI 共創故事系統。AI 不把視覺模型的判斷直接當成事實，也不一次生成完整故事；它先提出「我看到了什麼」與「故事接下來可能怎麼走」，再讓孩子確認、修正、補充，甚至直接修改原本的畫作。
 
-故事同樣採逐段生成。Agent 每次只提出一小段敘事，再讓孩子確認、補充、改寫，或直接修改原本的畫作。當畫作出現新的版本時，系統重新觀察變化、只追問真正有意義的新資訊，更新世界與故事狀態，再產生下一段故事與語音。核心目標是一個持續運作的 closed loop，而不是一次性的「看圖生故事」。
+系統把孩子確認過的內容保存成 **canonical world state** 與 **canonical story state**。下一次 AI 觀察或生成故事時，只能從這些已確認的狀態繼續，因此孩子的修正會真正影響後續敘事，而不是只變成下一輪 prompt 裡的一句話。
 
-## 核心互動
+## Hackathon 核心主張
 
-```mermaid
-flowchart TD
-    A["孩子上傳 / 拍攝畫作 Revision N"] --> B["VLM 提出候選觀察"]
-    B --> C["孩子確認 / 修正 / 略過"]
-    C --> D["Canonical World State vN"]
-    D --> E["Story Agent 產生一小段故事提案"]
-    E --> F["TTS 播放故事語音"]
-    F --> G["孩子確認、補充、改寫，或直接修改畫作"]
-    G --> H{"孩子是否修改畫作？"}
-    H -- "是" --> I["建立 Drawing Revision N+1"]
-    I --> J["辨識新增 / 刪除 / 改變 / 不確定資訊"]
-    J --> C
-    H -- "否" --> K["更新 Story State"]
-    K --> E
+很多 AI storytelling 系統的流程是：
+
+```text
+Drawing → AI → Story
 ```
 
-## 兩層 Grounding
+我們要證明的是一個持續運作的 child-grounded closed loop：
 
-系統刻意把「AI 看懂了什麼」與「故事接下來怎麼走」分開確認。
+```text
+Drawing Revision N
+        ↓
+VLM Observation Proposal
+        ↓
+Child Grounding
+確認 / 修正 / 略過
+        ↓
+Canonical World State
+        ↓
+Short Story Proposal
+        ↓
+TTS Story Audio
+        ↓
+Child Grounding
+確認 / 改寫 / 補充 / 改畫
+        ↓
+World / Story State Update
+        ↓
+Drawing Revision N+1 or Next Story Segment
+        ↺
+```
 
-### 1. Drawing grounding
+核心原則只有一句：
 
-VLM 只能提出 observation proposal，不能直接寫入孩子世界中的事實。
+> **AI proposes; the child owns the world and story.**
 
-例如：
+## 為什麼不是「看圖生故事」
+
+畫作不是一次性的 prompt，而是會持續變動的世界介面。
+
+第一次，AI 可能把四顆氣球看成四顆球：
 
 ```text
 AI observation: 4 balls
@@ -42,13 +57,9 @@ Child correction: 不是球，是氣球
 Canonical world: 4 balloons
 ```
 
-後續故事只能依照孩子確認後的 canonical world state 繼續。
+後面的故事只能使用 `balloon`。
 
-### 2. Narrative grounding
-
-AI 每次只生成一小段 story proposal，再讓孩子取得敘事主導權。
-
-例如：
+接著 AI 只講一小段故事：
 
 ```text
 AI proposal: 小明躲到樹下避雨
@@ -58,78 +69,118 @@ Child correction: 不要，他拿出雨傘
 Canonical story state: 小明拿出雨傘
 ```
 
-下一輪生成必須從更新後的 story state 繼續，而不是重新自由生成一個不一致的故事。
+下一段不能又讓小明躲回樹下。
 
-## 畫作 Revision 與閉回路
-
-畫作不是一次性的 prompt，而是持續變化的世界狀態介面。
+如果孩子之後真的在同一張畫新增一隻狗，再上傳第二版畫作：
 
 ```text
 Drawing R1
-   ↓
-Observation Batch 1
-   ↓
-World State v1
-   ↓
-Story Segment 1 + Audio 1
-   ↓
-Child edits drawing
-   ↓
+- 4 people
+- 4 balloons
+
 Drawing R2
-   ↓
-Semantic changes
-   ↓
-Selective grounding
-   ↓
-World State v2
-   ↓
-Story Segment 2 + Audio 2
-   ↺
+- 4 people
+- 4 balloons
++ dog
 ```
 
-第二次觀察不以單純 pixel diff 為核心，而是比較「新 observation」與「目前 canonical state」的語意差異，例如：
+系統應該只追問真正的新變化：
 
-```text
-added:
-- umbrella
-- cloud
+> 「我好像看到你新畫了一隻狗，是嗎？」
 
-changed:
-- person_2.expression: smile -> crying
+確認後，下一段故事才把狗帶進來。
 
-removed:
-- ball_3
+這就是本專案要做的 **drawing revision → semantic reconciliation → selective grounding → state update → narrative continuation**。
 
-uncertain:
-- red object may be a flower
-```
+## 兩層 Grounding
 
-系統只需要對會影響故事、且仍不確定的變化再次詢問孩子；已確認且沒有改變的內容不必每輪重新確認。
+### Drawing grounding
 
-## MVP 要證明什麼
+VLM 只能建立 observation proposal，不能直接寫入 canonical world。
 
-MVP 不以「生成一本漂亮故事書」或「生成故事畫面」為完成標準，而是要證明一條可持續的 stateful closed loop：
+孩子可以：
 
-- AI observation 與 child-confirmed fact 必須分開保存。
-- 孩子能修正 AI，且修正結果真的影響後續故事。
-- AI 逐段提出故事，而不是一次生成完整劇情。
-- 孩子能透過確認、補充、修正或修改畫作改變後續故事。
-- 新畫作 revision 能更新既有 world state，而不是每次重開一個全新故事。
-- Story generator 只讀 canonical world/story state，不直接依賴未確認的 VLM raw output。
-- 故事輸出以語音為主要體驗，畫面只保留必要的上傳、確認、修正與播放控制。
-- 不從顏色、構圖、人物大小或表情直接推論孩子的心理、人格、發展或醫療狀態。
+- 確認；
+- 修正；
+- 拒絕；
+- 略過、保持未知。
+
+已確認且沒有改變的資訊不應每一輪重新詢問。
+
+### Narrative grounding
+
+Story Agent 每次只提出一小段 story proposal。
+
+孩子可以：
+
+- 接受並繼續；
+- 修正故事細節；
+- 補充新的發展；
+- 直接修改畫作來改變世界。
+
+確認後才更新 canonical story state，再生成下一段。
+
+## Hackathon MVP 要證明什麼
+
+MVP 不以「生成一本漂亮故事書」或「生成故事畫面」為完成標準。比賽版只需要把以下一條閉回路跑得穩：
+
+1. AI 看畫並提出候選觀察。
+2. 孩子可以糾正 AI，而且糾正會進入 canonical world state。
+3. AI 從確認過的 world/story state 產生一小段故事。
+4. 故事以 TTS 語音播放；不依賴生成故事圖片。
+5. 孩子可以修正故事，或直接修改原畫再上傳。
+6. 新畫作只找出 `added / changed / removed / uncertain` 的語意變化。
+7. 系統只詢問真正重要的新變化。
+8. 下一段故事同時尊重先前修正與最新畫作變化。
+9. Refresh / retry 不會遺失或重複已提交的狀態。
+
+不做的事情同樣重要：
+
+- 不從兒童畫作推論心理疾病、人格、隱藏動機或道德特質；
+- 不把 AI observation 當成孩子世界的真相；
+- 不靠 generated illustration / video / animation 當主要賣點；
+- 不把黑客松 scope 擴張成完整聊天平台、帳號系統或長期兒童 profile。
+
+## 2–3 分鐘 Demo 劇本
+
+我們希望評審看到的不是 API 串接，而是一個很明確的狀態改變：
+
+1. 上傳第一版畫作。
+2. AI：「我看到四個人和四顆球，對嗎？」
+3. 孩子：「不是球，是氣球。」
+4. 系統顯示 `ball → balloon ✓`。
+5. 第一段故事語音真的使用「氣球」。
+6. 孩子修正一個故事發展，或在畫上新增一隻狗。
+7. 上傳 Drawing Revision 2。
+8. 系統只指出 `+ dog`，而不是重新詢問已確認的氣球。
+9. 孩子確認狗。
+10. 下一段故事語音出現狗，同時仍然記得「氣球」與先前的故事修正。
+
+這個流程就是 hackathon 的主要 **wow moment**。
 
 ## 專案目前狀態
 
-目前 `main` 已完成 **deterministic vertical slice**：React 與 FastAPI 已跑通合成畫作、ball → balloon 修正、world-state persistence、三個場景、兩次選擇與非評分結尾；頁面重新整理後會從 API 與 persisted state 恢復流程。
+### 已完成並在 `main`
 
-目前主線正在從 deterministic fixture 進入 provider integration。下一階段會把現有的 observer boundary 接到真實 VLM，再把原本的固定 branching demo 收斂成新的 closed-loop interaction：drawing revision、selective grounding、story state、短段故事生成與 TTS。
+- React + TypeScript + Vite web client。
+- FastAPI backend。
+- SQLite + SQLAlchemy + Alembic persistence。
+- Session、Observation、World State、immutable events、state version、idempotency。
+- `model_observation → child confirm/correct → canonical world` 的核心不變量。
+- Deterministic browser vertical slice。
+- Ball → balloon 修正、三個場景、兩次選擇與 refresh recovery。
 
-目前仍應清楚區分：
+### 目前進行中
 
-- 已完成：session / observation / world-state core、SQLite persistence、idempotency、versioning、deterministic browser loop。
-- 進行中：provider-neutral observer、VLM safety/schema boundary、benchmark。
-- 尚未完成：drawing revision reconciliation、canonical story state、逐段 story generation、正式 TTS integration、部署版 persistent storage。
+[MVP-04 / Issue #8](https://github.com/futuremodeokok/child/issues/8)：provider-neutral Observer、VLM schema/safety boundary、synthetic benchmark 與 real-provider adapter。對應 implementation PR 為 [PR #9](https://github.com/futuremodeokok/child/pull/9)，**尚未視為 merged capability**。
+
+### 接下來三個 Hackathon Issues
+
+1. [#11 — Drawing revision closed loop and selective grounding](https://github.com/futuremodeokok/child/issues/11)
+2. [#12 — Incremental story state, narrative grounding and TTS loop](https://github.com/futuremodeokok/child/issues/12)
+3. [#13 — Public demo deployment and hackathon hardening](https://github.com/futuremodeokok/child/issues/13)
+
+詳細順序見 [Implementation plan](docs/IMPLEMENTATION_PLAN.md)。
 
 ## 系統邊界
 
@@ -138,121 +189,95 @@ flowchart LR
     UI["React Web"] --> API["FastAPI Core"]
     API --> OBS["Observer Adapter / VLM"]
     OBS --> API
-    API --> DB["World + Story State"]
+    API --> STATE["Canonical World + Story State"]
     API --> STORY["Story Provider / LLM"]
     STORY --> API
     API --> TTS["TTS Provider"]
     TTS --> UI
 ```
 
-幾個重要邊界：
+重要邊界：
 
-1. VLM raw output 只能形成 proposal，不能直接變成 canonical state。
-2. Story provider 只讀孩子已確認的 canonical state。
-3. TTS 只負責把已確定要播放的故事文字轉成音訊，不擁有故事邏輯。
-4. Provider-specific SDK、payload、model name 與 secret 都留在 adapter/configuration boundary，不進 domain model。
+1. **Observation is not fact**：VLM raw output 只能形成 proposal。
+2. **Child authority**：孩子的 confirm/correct/supply 優先於模型判斷。
+3. **State before generation**：Story Provider 只能把 canonical state 當成權威資料來源。
+4. **Story is proposed, not imposed**：AI 逐段提出，孩子可以改。
+5. **Revision is interaction**：修改原畫本身就是故事互動。
+6. **TTS owns no story logic**：語音 provider 只把已確定要播放的文字轉成音訊。
+7. Provider-specific SDK、payload、model name 與 secret 不進 domain model。
+
+## 技術基線
+
+- Web：React、TypeScript、Vite。
+- API：Python 3.12、FastAPI、Pydantic。
+- Persistence：SQLAlchemy、Alembic；本機 SQLite，公開部署改 external persistent DB。
+- AI boundaries：VLM Observer、Story LLM、TTS 都透過 provider adapter 隔離。
+- Deterministic fallback：repository-owned synthetic fixtures，不依賴外部模型即可跑 regression / rehearsal。
+
+朋友在獨立 `dev` branch 已有 VLM / story generation / ElevenLabs TTS prototype，可作為 provider integration 的參考；**不直接 merge 整支 unrelated-history `dev` branch**，需要的能力會重新接入目前 FastAPI/domain boundary。
 
 ## 本機開發
 
-需求：
-
-- Node.js 24
-- Python 3.12
-- [uv](https://docs.astral.sh/uv/)
-
-從乾淨的 checkout 安裝鎖定版本：
+需求：Node.js 24、Python 3.12、[uv](https://docs.astral.sh/uv/)。
 
 ```bash
 make setup
-```
-
-分別啟動 API 與 web：
-
-```bash
 uv run --project services/api alembic -c services/api/alembic.ini upgrade head
 make dev-api
 ```
+
+另一個 terminal：
 
 ```bash
 make dev-web
 ```
 
-瀏覽器開啟 `http://localhost:5173`。若要改 API 網址，將 `apps/web/.env.example` 複製為 `apps/web/.env.local`；若要改允許的 browser origin，啟動 API 前設定 `CHILD_API_CORS_ORIGINS`。根目錄的 `.env.example` 集中列出所有可用變數。
+開啟 `http://localhost:5173`。
 
-### Deterministic fixture browser UAT
-
-目前已完成的 deterministic slice 仍保留作為 regression / fallback path：
-
-1. 執行 migration、`make dev-api` 與 `make dev-web`，開啟 `http://localhost:5173`。
-2. 確認畫面顯示「合成資料・展示模式」，按「開始示範故事」。
-3. 按「使用這張合成示範圖」，確認系統只把圓形物件暫時稱為球；此時重新整理，應回到同一張 grounding card。
-4. 按「不是球，是四顆氣球」，確認後續內容都使用「氣球」；重新整理應保持目前狀態。
-5. 完成兩次故事選擇並到達結尾，確認沒有答錯、扣分或道德分數文字。
-6. 重新整理各階段，確認 session 與 state 都能由 API 恢復。
-7. 按「再開始一次」，確認能建立新的流程而不污染前一個 session。
-
-目前 deterministic slice 的公開 API 為 `POST /v1/sessions`、`GET /v1/sessions/{id}`、`POST /v1/sessions/{id}/fixture`、`POST /v1/sessions/{id}/grounding` 與 `POST /v1/sessions/{id}/choices`。Mutation body 都帶 `expected_state_version` 與 `idempotency_key`；重送相同 key 不重複推進，過期 version 回傳 `409 state_conflict`。
-
-執行與 CI 相同的完整檢查：
+執行完整 deterministic checks：
 
 ```bash
 make check
 ```
 
-## 接下來的產品路線
+### 已完成 deterministic UAT
 
-1. 完成 provider-neutral VLM observer 與安全 / schema boundary。
-2. 增加 drawing revision 與 semantic change reconciliation。
-3. 實作 selective grounding，只追問新的、改變的或高語意不確定資訊。
-4. 增加 canonical story state 與逐段 story proposal。
-5. 把既有 ElevenLabs TTS prototype 整合成正式 `TTSProvider` boundary。
-6. 完成「畫作 → 確認 → 故事語音 → 改畫 / 修正 → 狀態更新 → 下一段語音」browser UAT。
-7. 再處理正式部署、external Postgres、private object storage 與 demo hardening。
+目前 `main` 的 fixture path 仍保留作 regression / demo fallback：
+
+1. 建立 session。
+2. 使用明確標示的 synthetic drawing fixture。
+3. AI proposal 為 `ball`。
+4. 孩子修正為 `balloon`。
+5. 後續 deterministic story 使用 `balloon`。
+6. 完成兩次選擇到達非評分結尾。
+7. 各階段 refresh 能由 server-side persisted state 恢復。
+
+目前公開 API 包含 `POST /v1/sessions`、`GET /v1/sessions/{id}`、`POST /v1/sessions/{id}/fixture`、`POST /v1/sessions/{id}/grounding`、`POST /v1/sessions/{id}/choices`。Mutation 使用 `expected_state_version` 與 `idempotency_key` 保護重送與 stale writes。
 
 ## 部署方向
 
-本機開發目前使用 SQLite。公開 demo 時不應依賴 serverless instance 的本地檔案持久化；目標架構會把 application state 與媒體分離：
+公開 Hackathon demo 的目標不是 production-scale 架構，而是可靠的 HTTPS closed-loop demo：
 
-- Web / API：Vercel 或等價的 HTTPS deployment。
-- Persistent state：外部 Postgres。
-- Drawing / audio assets：private object storage。
-- VLM / LLM / TTS：全部透過 provider adapters 與環境變數配置。
+- Web：優先考慮 Vercel。
+- API：若 FastAPI 在 Vercel serverless boundary 足夠可靠則同平台；否則採小型外部 backend。
+- Persistent state：external Postgres。
+- Drawing / audio：需要真實上傳時使用 private / short-lived object storage。
+- Secrets：只放 server-side environment variables。
 
-實際 provider、storage 與 hosting 選型會在對應 decision gate 有 benchmark / UAT evidence 後再固定，不把供應商寫死在 domain logic。
+最終 hosting / storage 選型以 #13 的實際 deployment evidence 為準。
 
 ## 文件導覽
 
-完整索引與文件狀態請見 [docs/README.md](docs/README.md)。
+- [Concept](docs/CONCEPT.md)
+- [Product spec](docs/PRODUCT_SPEC.md)
+- [Technical design](docs/TECHNICAL_DESIGN.md)
+- [Data contracts](docs/DATA_CONTRACTS.md)
+- [Agent policy](docs/AGENT_POLICY.md)
+- [Safety and privacy](docs/SAFETY_PRIVACY.md)
+- [Demo and evaluation](docs/DEMO_EVALUATION.md)
+- [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
+- [Prior art](docs/PRIOR_ART.md)
 
-| 想了解的內容 | 文件 |
-|---|---|
-| 題目、設計理念與差異化 | [Concept](docs/CONCEPT.md) |
-| 使用者流程、需求與範圍 | [Product spec](docs/PRODUCT_SPEC.md) |
-| 系統元件、狀態機與部署邊界 | [Technical design](docs/TECHNICAL_DESIGN.md) |
-| World state、scene 與 API 草案 | [Data contracts](docs/DATA_CONTRACTS.md) |
-| Agent orchestration 與行為規則 | [Agent policy](docs/AGENT_POLICY.md) |
-| 兒童安全、隱私與內容處理 | [Safety and privacy](docs/SAFETY_PRIVACY.md) |
-| Demo 腳本、測試案例與指標 | [Demo and evaluation](docs/DEMO_EVALUATION.md) |
-| 實作順序與 Issue backlog | [Implementation plan](docs/IMPLEMENTATION_PLAN.md) |
-| 相鄰產品、研究與撞題分析 | [Prior art](docs/PRIOR_ART.md) |
+## 一句話版本
 
-## 核心產品原則
-
-1. **Observation is not fact**：模型看見的內容，在孩子確認前不能成為故事事實。
-2. **Meaning belongs to the child**：人物身分、關係、事件原因與故事發展，以孩子的說法為優先。
-3. **Story is proposed, not imposed**：AI 逐段提出敘事，孩子可以確認、修正、補充或改畫。
-4. **State before generation**：下一段故事只能依目前 canonical world/story state 生成。
-5. **Revision is interaction**：孩子修改畫作本身就是故事互動，不只靠按鈕選項。
-6. **One orchestrated state machine**：MVP 使用單一 orchestrator 與結構化步驟，不堆疊互相聊天的 agents。
-7. **No diagnosis from drawings**：本專案不是心理衡鑑、醫療診斷或治療工具。
-
-## MVP 技術基線
-
-- Web client：React、TypeScript、Vite。
-- Python API：Python 3.12、FastAPI、Pydantic。
-- Persistence：SQLite、SQLAlchemy、Alembic；部署版再替換為外部 persistent database。
-- Model boundaries：VLM、LLM、STT、TTS 均透過 provider-neutral adapters 隔離。
-- Story output：以短段文字 + TTS 語音為主，不把逐 scene AI 圖片 / 影片生成列為核心功能。
-- Rendering：保留必要的畫作預覽、確認 / 修正 controls、播放控制與簡單狀態提示。
-
-技術方向仍以 [Technical design](docs/TECHNICAL_DESIGN.md) 與後續 ADR / Issue 為準。
+> **AI 不一次決定完整故事，而是逐段提出畫作理解與故事發展；孩子透過確認、修正、語音／文字補充或直接修改畫作持續改變世界，系統再依孩子確認過的狀態繼續說下去。**
