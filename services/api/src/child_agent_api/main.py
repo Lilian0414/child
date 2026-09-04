@@ -17,9 +17,12 @@ from child_agent_api.domain.errors import (
 from child_agent_api.domain.models import (
     AccessibilityProfile,
     CandidateDecision,
+    FullStory,
     ObservationBatch,
     ObservationDecision,
     RevisionState,
+    StoryGrounding,
+    StoryState,
 )
 from child_agent_api.fixture_flow import FlowView, build_view, observation_batch, observation_id
 from child_agent_api.observer import ObserverItem, ObserverPayload
@@ -86,6 +89,15 @@ class RevisionObservationBatch(ApiModel):
 class ResolveRevisionRequest(MutationRequest):
     command_id: Annotated[str, Field(pattern=r"^ans_[A-Za-z0-9_-]+$")]
     decisions: list[CandidateDecision] = Field(min_length=1, max_length=5)
+
+
+class StoryProposalRequest(ApiModel):
+    expected_state_version: Annotated[int, Field(ge=0)]
+
+
+class GroundStoryRequest(MutationRequest):
+    action: Literal["accept", "correct", "redirect"]
+    supplied_text: Annotated[str | None, Field(min_length=1, max_length=500)] = None
 
 
 class ErrorResponse(ApiModel):
@@ -184,6 +196,33 @@ def create_session(body: CreateSessionRequest, service: Service) -> FlowView:
 def restore_session(session_id: str, service: Service) -> FlowView:
     service.get_session(session_id)
     return current_view(session_id, service)
+
+
+@app.get("/v1/sessions/{session_id}/story", response_model=StoryState)
+def restore_story(session_id: str, service: Service) -> StoryState:
+    return service.get_story(session_id)
+
+
+@app.post("/v1/sessions/{session_id}/story/proposals", response_model=StoryState)
+def propose_story(session_id: str, body: StoryProposalRequest, service: Service) -> StoryState:
+    return service.request_story_proposal(session_id, body.expected_state_version)
+
+
+@app.post(
+    "/v1/sessions/{session_id}/story/proposals/{proposal_id}/ground", response_model=StoryState
+)
+def ground_story(
+    session_id: str, proposal_id: str, body: GroundStoryRequest, service: Service
+) -> StoryState:
+    grounding = StoryGrounding(action=body.action, supplied_text=body.supplied_text)
+    return service.ground_story_proposal(
+        session_id, proposal_id, grounding, body.expected_state_version, body.idempotency_key
+    )
+
+
+@app.get("/v1/sessions/{session_id}/story/full", response_model=FullStory)
+def full_story(session_id: str, service: Service) -> FullStory:
+    return service.full_story(session_id)
 
 
 @app.post(

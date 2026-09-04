@@ -20,6 +20,8 @@ def test_empty_database_upgrades_to_head(tmp_path: Path) -> None:
         "observations",
         "reconciliation_candidates",
         "sessions",
+        "story_proposals",
+        "story_snapshots",
         "world_snapshots",
     }
 
@@ -33,5 +35,7 @@ def test_upgrade_uses_configured_application_database(tmp_path: Path, monkeypatc
 
     command.upgrade(config, "head")
 
-    assert "sessions" in inspect(create_engine(f"sqlite:///{configured_database}")).get_table_names()
+    assert (
+        "sessions" in inspect(create_engine(f"sqlite:///{configured_database}")).get_table_names()
+    )
     assert not ini_database.exists()
