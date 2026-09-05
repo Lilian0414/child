@@ -1,3 +1,4 @@
+import json
 import tomllib
 from pathlib import Path
 
@@ -20,3 +21,10 @@ def test_railway_runtime_contract() -> None:
     assert start.index(migration) < start.index(server)
     assert "&& exec" in start
     assert deploy["healthcheckPath"] == "/health"
+
+
+def test_railpack_root_forces_python_and_uv() -> None:
+    config = json.loads(Path("railpack.json").read_text())
+
+    assert config["provider"] == "python"
+    assert config["packages"]["uv"]
