@@ -2,7 +2,6 @@ const apiBaseUrl = ''
 
 const actionPanel = document.getElementById('action-panel')
 const textPanel = document.getElementById('text-panel')
-const modeSwitch = document.getElementById('mode-switch')
 const sceneCount = document.getElementById('scene-count')
 const statusMessage = document.getElementById('status-message')
 const errorMessage = document.getElementById('error-message')
@@ -11,8 +10,6 @@ const cameraVideo = document.getElementById('camera-video')
 const cameraCanvas = document.getElementById('camera-canvas')
 
 let loading = false
-let liveMode = 'demo'
-let modeSwitching = false
 
 // 'intro' -> 'camera' -> 'grounding' (confirm what AI saw in the drawing)
 // -> 'story' (accept/correct/redirect each proposed segment) -> 'full-story'
@@ -32,6 +29,7 @@ let customAnswer = ''
 let storyState = null // latest StoryState from the API
 let storyAction = null // 'correct' | 'redirect' while its free-text box is open
 let childIdeaInput = '' // the child's plot idea, typed before each AI-written segment
+let lastQuestion = null // the AI's interactive question from the segment just accepted
 
 function newKey(prefix) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`
@@ -48,49 +46,6 @@ function setError(message) {
   } else {
     errorMessage.hidden = true
   }
-}
-
-// ---- Live-mode switch (demo / gemma / minimax), independent of the panels ----
-
-const MODE_LABELS = { demo: 'Demo', gemma: 'Gemma', minimax: 'MiniMax' }
-
-function renderModeSwitch() {
-  modeSwitch.replaceChildren()
-  for (const mode of ['demo', 'gemma', 'minimax']) {
-    const el = button(MODE_LABELS[mode], () => void setLiveMode(mode), {
-      disabled: modeSwitching || mode === liveMode,
-    })
-    if (mode === liveMode) el.classList.add('active')
-    modeSwitch.append(el)
-  }
-}
-
-async function setLiveMode(mode) {
-  modeSwitching = true
-  renderModeSwitch()
-  try {
-    const result = await api('/v1/config/live-mode', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ live_mode: mode }),
-    })
-    liveMode = result.live_mode
-  } catch {
-    setError('切換模式失敗，請再試一次。')
-  } finally {
-    modeSwitching = false
-    renderModeSwitch()
-  }
-}
-
-async function loadLiveMode() {
-  try {
-    const result = await api('/v1/config/live-mode')
-    liveMode = result.live_mode
-  } catch {
-    // keep the 'demo' default if this fails — never block the app on it
-  }
-  renderModeSwitch()
 }
 
 async function api(path, init) {
@@ -342,11 +297,37 @@ async function groundStoryProposal(action, suppliedText) {
     render()
     return
   }
-  // Accepted (or corrected/redirected) into a canonical segment — go back to
-  // asking the child what should happen next, rather than letting AI free-run.
+  // Accepted into a canonical segment — go back to asking the child what
+  // should happen next, rather than letting AI free-run.
   uiStep = 'story-idea'
   setLoading(false)
   render()
+}
+
+async function regenerateStoryProposal(childIdea) {
+  const proposalId = storyState.current_proposal.proposal_id
+  setLoading(true)
+  setError(null)
+  render()
+  try {
+    storyState = await api(
+      `/v1/sessions/${sessionId}/story/proposals/${proposalId}/regenerate`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expected_state_version: sessionVersion, child_idea: childIdea }),
+      },
+    )
+    // Still a draft, not yet accepted — stay on the same confirm screen so the
+    // child can accept / ask for another change on this new attempt.
+    storyAction = null
+    customAnswer = ''
+  } catch {
+    setError('AI 重新想故事的時候出了點問題，請再試一次。')
+  } finally {
+    setLoading(false)
+    render()
+  }
 }
 
 async function showFullStory() {
@@ -395,6 +376,7 @@ function resetAll() {
   showCustomInput = false
   customAnswer = ''
   childIdeaInput = ''
+  lastQuestion = null
   uiStep = 'intro'
   render()
 }
@@ -593,6 +575,12 @@ function renderStoryIdea() {
     textPanel.append(p)
   }
 
+  if (lastQuestion) {
+    const question = document.createElement('h2')
+    question.textContent = lastQuestion
+    textPanel.append(question)
+  }
+
   const prompt = document.createElement('p')
   prompt.className = 'summary'
   prompt.textContent = '跟我說說接下來想發生什麼事，我會把它寫成故事給你看！'
@@ -648,6 +636,12 @@ function renderStory() {
     proposalText.className = 'summary'
     proposalText.textContent = proposal.text
     textPanel.append(proposalText)
+
+    if (proposal.question) {
+      const question = document.createElement('h2')
+      question.textContent = proposal.question
+      textPanel.append(question)
+    }
   }
 
   photoStrip()
@@ -656,7 +650,10 @@ function renderStory() {
     const actions = document.createElement('div')
     actions.className = 'actions'
     actions.append(button('唸給我聽', () => void listen(proposal.text), { className: 'listen' }))
-    actions.append(button('對，就是這樣', () => void groundStoryProposal('accept'), { disabled: loading }))
+    actions.append(button('對，就是這樣', () => {
+      lastQuestion = proposal.question
+      void groundStoryProposal('accept')
+    }, { disabled: loading }))
     actions.append(
       button('不是，我要改寫…', () => { storyAction = 'correct'; render() }, {
         className: 'secondary',
@@ -680,7 +677,7 @@ function renderStory() {
       input.value = customAnswer
       input.addEventListener('input', (event) => { customAnswer = event.target.value })
       const submit = button('送出', () => {
-        if (customAnswer.trim()) void groundStoryProposal(storyAction, customAnswer.trim())
+        if (customAnswer.trim()) void regenerateStoryProposal(customAnswer.trim())
       }, { disabled: loading })
       form.append(input, submit)
       actionPanel.append(form)
@@ -751,4 +748,3 @@ function render() {
 }
 
 render()
-void loadLiveMode()

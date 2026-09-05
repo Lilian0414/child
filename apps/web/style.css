@@ -145,35 +145,6 @@ body::before {
   text-shadow: 0 1px 0 rgba(255,255,255,.5);
 }
 
-.mode-switch {
-  display: flex;
-  gap: .35rem;
-  padding: .3rem;
-  border-radius: 999px;
-  border: 2px solid rgba(255, 255, 255, .82);
-  background: rgba(246, 252, 255, .76);
-  box-shadow: 0 5px 0 rgba(42, 116, 158, .18), 0 8px 22px rgba(31, 96, 139, .15);
-  backdrop-filter: blur(10px);
-}
-.mode-switch button {
-  min-height: 2.55rem;
-  padding: 0 1rem;
-  font-size: .9rem;
-  font-weight: 800;
-  color: #0b4f7a;
-  background: transparent;
-  box-shadow: none;
-  text-shadow: none;
-}
-.mode-switch button::before { display: none; }
-.mode-switch button:hover { background: rgba(255,255,255,.6); filter: none; }
-.mode-switch button.active {
-  color: #654000;
-  background: #ffd86a;
-  box-shadow: 0 3px 0 #e2a934;
-  text-shadow: none;
-}
-.mode-switch button:disabled { cursor: wait; opacity: .6; }
 .scene-count {
   color: #123f5f;
   font-size: 1rem;

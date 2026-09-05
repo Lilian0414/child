@@ -9,7 +9,7 @@ import os
 
 import requests
 
-DEFAULT_VOICE_ID = "hpp4J3VqNfWAUOO0d1Us"  # Bella
+DEFAULT_VOICE_ID = "r6qgCCGI7RWKXCagm158"  # anna su
 API_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 
 

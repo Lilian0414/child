@@ -33,14 +33,12 @@ Required for first staging:
 
 ```dotenv
 CHILD_DATABASE_URL=sqlite:////data/child_agent.db
-CHILD_LIVE_MODE=demo
+GMI_API_KEY=
 ```
 
-`CHILD_LIVE_MODE=demo` is network-free and requires no model or speech secrets. The
-following variables are optional until live-provider UAT:
+MiniMax on GMI Cloud (`GMI_API_KEY`) is the confirmed live VLM + story provider; there is
+no offline/demo fallback mode. The following variables are optional:
 
-- `HF_TOKEN` for Gemma through the configured Hugging Face route;
-- `GMI_API_KEY` for MiniMax through GMI Cloud;
 - `ELEVENLABS_API_KEY` for ElevenLabs TTS;
 - `CHILD_OBSERVER_API_KEY`, `CHILD_OBSERVER_MODEL`, and
   `CHILD_OBSERVER_BASE_URL` for the generic observer adapter;
@@ -63,7 +61,7 @@ running the exact commands represented by `railway.toml`:
 
 ```bash
 export CHILD_DATABASE_URL="sqlite:////tmp/child-agent-staging.db"
-export CHILD_LIVE_MODE=demo
+export GMI_API_KEY="<your GMI Cloud key>"
 export PORT=8000
 uv run --project services/api --no-sync alembic -c services/api/alembic.ini upgrade head \
   && uv run --project services/api --no-sync uvicorn child_agent_api.main:app \
@@ -73,6 +71,6 @@ curl --fail "http://127.0.0.1:${PORT}/health"
 
 ## Follow-up hardening
 
-The current application exposes its live-provider mode switch through the public API.
-Restrict or remove that switch before treating the staging URL as a hardened public
-deployment. This phase deliberately does not change provider behavior or that API.
+Provider selection is now fixed to MiniMax in code (no public switch endpoint), so there
+is no live-provider mode switch to restrict before treating the staging URL as a
+hardened public deployment.

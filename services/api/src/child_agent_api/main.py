@@ -39,12 +39,6 @@ from child_agent_api.observer import (
     ObserverProvider,
 )
 from child_agent_api.persistence.database import create_database_engine
-from child_agent_api.providers.demo import TemplateStoryProvider, demo_observer
-from child_agent_api.providers.gemma_story import (
-    GemmaConfigError,
-    GemmaStoryProvider,
-    gemma_observer,
-)
 from child_agent_api.providers.minimax import (
     MiniMaxConfigError,
     MiniMaxStoryProvider,
@@ -59,33 +53,16 @@ load_dotenv(REPO_ROOT / ".env")
 
 DEFAULT_CORS_ORIGINS = ""
 
-# live_mode selects which live model backs the ObserverProvider/StoryProvider
-# boundaries: "gemma" or "minimax" call out to a real model; "demo" (the default,
-# also the CHILD_LIVE_MODE env var fallback) uses fully offline, network-free demo
-# providers. Same API surface either way — only this wiring changes, the frontend
-# and Core never know. Mutable at runtime via /v1/config/live-mode so the frontend
-# can switch without restarting the server.
-ProviderConfigError = (GemmaConfigError, MiniMaxConfigError)
-LiveMode = Literal["demo", "gemma", "minimax"]
-LIVE_MODES: tuple[LiveMode, ...] = ("demo", "gemma", "minimax")
-_env_live_mode = os.getenv("CHILD_LIVE_MODE")
-live_mode: LiveMode = _env_live_mode if _env_live_mode in LIVE_MODES else "demo"  # type: ignore[assignment]
+# MiniMax (GMI Cloud) is the only live ObserverProvider/StoryProvider backend.
+ProviderConfigError = (MiniMaxConfigError,)
 
 
 def current_observer_provider() -> ObserverProvider:
-    if live_mode == "gemma":
-        return gemma_observer()
-    if live_mode == "minimax":
-        return minimax_observer()
-    return demo_observer()
+    return minimax_observer()
 
 
 def current_story_provider(child_idea: str | None = None) -> StoryProvider:
-    if live_mode == "gemma":
-        return GemmaStoryProvider(child_idea=child_idea)
-    if live_mode == "minimax":
-        return MiniMaxStoryProvider(child_idea=child_idea)
-    return TemplateStoryProvider(child_idea=child_idea)
+    return MiniMaxStoryProvider(child_idea=child_idea)
 
 
 def cors_origins_from_env() -> list[str]:
@@ -151,6 +128,11 @@ class StoryProposalRequest(ApiModel):
     child_idea: Annotated[str | None, Field(min_length=1, max_length=300)] = None
 
 
+class RegenerateStoryRequest(ApiModel):
+    expected_state_version: Annotated[int, Field(ge=0)]
+    child_idea: Annotated[str | None, Field(min_length=1, max_length=300)] = None
+
+
 class GroundStoryRequest(MutationRequest):
     action: Literal["accept", "correct", "redirect"]
     supplied_text: Annotated[str | None, Field(min_length=1, max_length=500)] = None
@@ -164,14 +146,6 @@ class ErrorResponse(ApiModel):
 
 class TTSRequest(ApiModel):
     text: Annotated[str, Field(min_length=1, max_length=2000)]
-
-
-class LiveModeResponse(ApiModel):
-    live_mode: LiveMode
-
-
-class SetLiveModeRequest(ApiModel):
-    live_mode: LiveMode
 
 
 engine = create_database_engine()
@@ -224,18 +198,6 @@ def domain_error(_request: Request, error: DomainError) -> JSONResponse:
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok", service="child-agent-api", version=app.version)
-
-
-@app.get("/v1/config/live-mode", response_model=LiveModeResponse)
-def get_live_mode() -> LiveModeResponse:
-    return LiveModeResponse(live_mode=live_mode)
-
-
-@app.post("/v1/config/live-mode", response_model=LiveModeResponse)
-def set_live_mode(body: SetLiveModeRequest) -> LiveModeResponse:
-    global live_mode
-    live_mode = body.live_mode
-    return LiveModeResponse(live_mode=live_mode)
 
 
 @app.post("/v1/tts")
@@ -309,6 +271,34 @@ def propose_story(session_id: str, body: StoryProposalRequest, service: Service)
     return Response(content=state.model_dump_json(), media_type="application/json")
 
 
+@app.post("/v1/sessions/{session_id}/story/proposals/{proposal_id}/regenerate")
+def regenerate_story(
+    session_id: str, proposal_id: str, body: RegenerateStoryRequest, service: Service
+) -> Response:
+    """Child said the current draft isn't what they meant — write a fresh draft
+    for the *same* still-pending proposal from their new idea. Nothing becomes
+    canonical here; this never touches world/session state, only the draft."""
+    try:
+        provider = current_story_provider(body.child_idea)
+    except ProviderConfigError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ErrorResponse(code="story_provider_failed", message=str(error)).model_dump(),
+        )
+    try:
+        state = service.regenerate_story_proposal(
+            session_id, proposal_id, body.expected_state_version, provider
+        )
+    except DomainError:
+        raise
+    except Exception as error:  # noqa: BLE001 - live model call, keep the API boundary stable
+        return JSONResponse(
+            status_code=502,
+            content=ErrorResponse(code="story_provider_failed", message=str(error)).model_dump(),
+        )
+    return Response(content=state.model_dump_json(), media_type="application/json")
+
+
 @app.post(
     "/v1/sessions/{session_id}/story/proposals/{proposal_id}/ground", response_model=StoryState
 )
@@ -362,7 +352,7 @@ async def submit_revision_photo(
     idempotency_key: Annotated[str, Form(min_length=8, max_length=100)],
 ) -> Response:
     """Live (non-fixture) drawing-revision entry point: a photo goes through a
-    real Gemma vision model, and the resulting observation batch is submitted
+    real MiniMax vision model, and the resulting observation batch is submitted
     through the same Core `submit_revision` boundary the fixture path uses —
     the photo never becomes canonical truth by itself."""
     image_bytes = await image.read()

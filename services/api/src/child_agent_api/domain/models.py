@@ -263,6 +263,9 @@ class StoryProposal(Contract):
     based_on_state_version: int = Field(ge=0)
     segment_index: int = Field(ge=0)
     text: str = Field(min_length=1, max_length=500)
+    # Optional interactive prompt for the child, kept separate from `text` so a
+    # provider's engagement question never becomes part of canonical story prose.
+    question: str | None = Field(default=None, max_length=200)
     world_dependencies: list[Identifier] = Field(default_factory=list, max_length=10)
     status: Literal["pending", "accepted", "superseded", "rejected"] = "pending"
 

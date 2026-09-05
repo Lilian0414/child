@@ -1,40 +1,52 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from child_agent_api.main import app, get_service
-from child_agent_api.providers.gemma_story import GemmaConfigError
+from child_agent_api.providers.minimax import MiniMaxConfigError
 from child_agent_api.service import WorldStateService
 from child_agent_api.story import StoryProviderResult
 
 
-def test_story_api_proposes_from_the_offline_template_provider_by_default(
+def test_story_api_regenerate_redrafts_the_pending_proposal_without_grounding(
     service: WorldStateService,
 ) -> None:
-    """Without CHILD_LIVE_MODE=gemma/minimax, story proposals never call Gemma — they use
-    the offline template provider so demos work with no network."""
+    """The 'not what I meant, try again' path must redraft the same pending
+    proposal via the provider — never take the child's raw text verbatim,
+    and never touch canonical world/session state."""
     app.dependency_overrides[get_service] = lambda: service
     client = TestClient(app)
-    with patch("child_agent_api.main.GemmaStoryProvider") as mock_gemma_provider:
-        response = client.post(
-            "/v1/sessions/ses_synthetic/story/proposals", json={"expected_state_version": 0}
+    fake_provider = MagicMock()
+    fake_provider.propose.side_effect = [
+        StoryProviderResult(text="故事開始了。"),
+        StoryProviderResult(text="故事變成這樣了。"),
+    ]
+    with patch("child_agent_api.main.MiniMaxStoryProvider", return_value=fake_provider):
+        proposed = client.post(
+            "/v1/sessions/ses_synthetic/story/proposals",
+            json={"expected_state_version": 0},
         )
-    mock_gemma_provider.assert_not_called()
-    assert response.status_code == 200
-    assert response.json()["current_proposal"]["text"]
+        proposal = proposed.json()["current_proposal"]
+        regenerated = client.post(
+            f"/v1/sessions/ses_synthetic/story/proposals/{proposal['proposal_id']}/regenerate",
+            json={"expected_state_version": 0, "child_idea": "主角決定去爬山"},
+        )
+    assert regenerated.status_code == 200
+    body = regenerated.json()
+    assert body["current_proposal"]["proposal_id"] == proposal["proposal_id"]
+    assert body["current_proposal"]["text"] != proposal["text"]
+    assert body["current_proposal"]["text"] != "主角決定去爬山"
+    assert body["segments"] == []
+    assert body["state_version"] == 0
     app.dependency_overrides.clear()
 
 
-def test_story_api_propose_ground_project_and_restore(
-    service: WorldStateService, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("child_agent_api.main.live_mode", "gemma")
+def test_story_api_propose_ground_project_and_restore(service: WorldStateService) -> None:
     app.dependency_overrides[get_service] = lambda: service
     client = TestClient(app)
     fake_provider = MagicMock()
     fake_provider.propose.return_value = StoryProviderResult(text="故事開始了。")
-    with patch("child_agent_api.main.GemmaStoryProvider", return_value=fake_provider):
+    with patch("child_agent_api.main.MiniMaxStoryProvider", return_value=fake_provider):
         proposed = client.post(
             "/v1/sessions/ses_synthetic/story/proposals", json={"expected_state_version": 0}
         )
@@ -59,14 +71,13 @@ def test_story_api_propose_ground_project_and_restore(
 
 
 def test_story_api_maps_provider_config_error_to_bad_gateway(
-    service: WorldStateService, monkeypatch: pytest.MonkeyPatch
+    service: WorldStateService,
 ) -> None:
-    monkeypatch.setattr("child_agent_api.main.live_mode", "gemma")
     app.dependency_overrides[get_service] = lambda: service
     client = TestClient(app)
     with patch(
-        "child_agent_api.main.GemmaStoryProvider",
-        side_effect=GemmaConfigError("HF_TOKEN 未設定"),
+        "child_agent_api.main.MiniMaxStoryProvider",
+        side_effect=MiniMaxConfigError("GMI_API_KEY 未設定"),
     ):
         response = client.post(
             "/v1/sessions/ses_synthetic/story/proposals", json={"expected_state_version": 0}
@@ -81,10 +92,13 @@ def test_completed_status_is_restored_through_public_api(
 ) -> None:
     app.dependency_overrides[get_service] = lambda: service
     client = TestClient(app)
-    proposal = client.post(
-        "/v1/sessions/ses_synthetic/story/proposals",
-        json={"expected_state_version": 0},
-    ).json()["current_proposal"]
+    fake_provider = MagicMock()
+    fake_provider.propose.return_value = StoryProviderResult(text="故事開始了。")
+    with patch("child_agent_api.main.MiniMaxStoryProvider", return_value=fake_provider):
+        proposal = client.post(
+            "/v1/sessions/ses_synthetic/story/proposals",
+            json={"expected_state_version": 0},
+        ).json()["current_proposal"]
     grounded = client.post(
         f"/v1/sessions/ses_synthetic/story/proposals/{proposal['proposal_id']}/ground",
         json={
