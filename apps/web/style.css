@@ -192,20 +192,15 @@ body::before {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(24rem, 46%) 1fr;
-  gap: clamp(1rem, 2.4vw, 2rem);
-  width: min(94vw, 88rem);
+  gap: clamp(2rem, 5vw, 6rem);
+  width: min(90vw, 84rem);
   margin: 0 auto clamp(1rem, 3vh, 2rem);
 }
 
 .panel {
   min-height: 0;
   overflow-y: auto;
-  padding: clamp(1.35rem, 3vw, 2.6rem);
-  border: 3px solid rgba(255, 255, 255, .83);
-  border-radius: clamp(1.6rem, 3vw, 2.6rem);
-  background: rgba(250, 254, 255, .78);
-  box-shadow: 0 10px 0 rgba(39, 112, 151, .13), 0 18px 45px rgba(20, 79, 115, .16);
-  backdrop-filter: blur(14px);
+  padding: clamp(1.1rem, 2vw, 2rem) 0;
 }
 
 #action-panel {
@@ -231,7 +226,7 @@ body::before {
   .layout {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto;
-    width: min(92vw, 40rem);
+    width: min(88vw, 40rem);
     margin-bottom: 5rem;
   }
   #action-panel {
@@ -256,7 +251,7 @@ body::before {
 h1 {
   margin: 0;
   font-weight: 900;
-  font-size: clamp(2.45rem, 5vw, 4.35rem);
+  font-size: clamp(2rem, 5vw, 3.6rem);
   line-height: 1.05;
   letter-spacing: -.03em;
   background: linear-gradient(180deg, #177fc0 0%, #07548c 65%, #093d65 100%);
@@ -437,7 +432,7 @@ button.listen:active { box-shadow: 0 1px 0 #dc8521, 0 4px 8px rgba(150, 83, 6, .
   .top-bar { align-items: flex-start; }
   .mode-switch { flex-wrap: wrap; }
   .mode-switch button { padding-inline: .75rem; }
-  .panel { padding: 1.25rem; }
+  .panel { padding: 1rem 0; }
   .custom-answer { flex-direction: column; }
   .actions { grid-template-columns: 1fr; }
 }
