@@ -414,12 +414,15 @@ button.listen:active { box-shadow: 0 1px 0 #dc8521, 0 4px 8px rgba(150, 83, 6, .
 }
 
 .custom-answer {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   gap: .7rem;
   margin: 0;
 }
 .custom-answer input {
-  flex: 1;
+  grid-column: 1 / -1;
+  min-width: 0;
+  width: 100%;
   min-height: 3.8rem;
   padding: 0 1.2rem;
   border-radius: 1rem;
@@ -433,7 +436,11 @@ button.listen:active { box-shadow: 0 1px 0 #dc8521, 0 4px 8px rgba(150, 83, 6, .
   backdrop-filter: blur(4px);
 }
 .custom-answer input::placeholder { color: #557b92; font-weight: 600; opacity: 1; }
-.custom-answer button { min-height: 3.8rem; }
+.custom-answer button {
+  width: 100%;
+  min-height: 3.8rem;
+  white-space: nowrap;
+}
 
 .mic-button {
   flex: none;
@@ -447,7 +454,8 @@ button.listen:active { box-shadow: 0 1px 0 #dc8521, 0 4px 8px rgba(150, 83, 6, .
 @media (max-width: 34rem) {
   .top-bar { align-items: flex-start; }
   .panel { padding: 1rem 0; }
-  .custom-answer { flex-direction: column; }
+  .custom-answer { grid-template-columns: 1fr; }
+  .custom-answer input { grid-column: auto; }
   .custom-answer .mic-button { width: 100%; }
   .actions { grid-template-columns: 1fr; }
 }
