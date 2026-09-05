@@ -39,6 +39,7 @@ from child_agent_api.observer import (
     ObserverProvider,
 )
 from child_agent_api.persistence.database import create_database_engine
+from child_agent_api.providers.groq_stt import GroqSTTError, transcribe
 from child_agent_api.providers.minimax import (
     MiniMaxConfigError,
     MiniMaxStoryProvider,
@@ -148,6 +149,10 @@ class TTSRequest(ApiModel):
     text: Annotated[str, Field(min_length=1, max_length=2000)]
 
 
+class SpeechToTextResponse(ApiModel):
+    text: str
+
+
 engine = create_database_engine()
 application_service = WorldStateService(engine)
 
@@ -210,6 +215,26 @@ def text_to_speech(body: TTSRequest) -> Response:
             content=ErrorResponse(code="tts_failed", message=str(error)).model_dump(),
         )
     return Response(content=audio_bytes, media_type="audio/mpeg")
+
+
+@app.post("/v1/stt", response_model=SpeechToTextResponse)
+async def speech_to_text(audio: UploadFile) -> Response:
+    """Groq Whisper transcription — lets the child speak into any of the
+    app's text inputs instead of typing. Returns plain text; the frontend
+    treats it exactly like typed input (same content guard, same submit)."""
+    audio_bytes = await audio.read()
+    try:
+        text = transcribe(
+            audio_bytes, audio.filename or "voice.webm", audio.content_type or "audio/webm"
+        )
+    except GroqSTTError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ErrorResponse(code="stt_failed", message=str(error)).model_dump(),
+        )
+    return Response(
+        content=SpeechToTextResponse(text=text).model_dump_json(), media_type="application/json"
+    )
 
 
 def current_view(session_id: str, service: WorldStateService) -> FlowView:
