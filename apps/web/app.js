@@ -31,8 +31,6 @@ let storyAction = null // 'correct' | 'redirect' while its free-text box is open
 let childIdeaInput = '' // the child's plot idea, typed before each AI-written segment
 let lastQuestion = null // the AI's interactive question from the segment just accepted
 let lastQuestionOptions = [] // up to 2 AI-suggested short answers for lastQuestion
-let showSupplementInput = false // typed "add more detail" box, mid-story (drawing-based version is off for now)
-let supplementInput = ''
 
 function newKey(prefix) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`
@@ -114,11 +112,6 @@ function capturePhoto() {
   cameraCanvas.height = height
   cameraCanvas.getContext('2d').drawImage(cameraVideo, 0, 0, width, height)
   photos = [...photos, cameraCanvas.toDataURL('image/jpeg', 0.85)]
-  render()
-}
-
-function retakeLastPhoto() {
-  photos = photos.slice(0, -1)
   render()
 }
 
@@ -363,12 +356,16 @@ async function regenerateStoryProposal(childIdea) {
   }
 }
 
-async function showFullStory() {
+async function showFullStory(pendingText) {
   setLoading(true)
   setError(null)
   try {
     const full = await api(`/v1/sessions/${sessionId}/story/full`)
-    storyState = { ...storyState, fullText: full.text }
+    // The canonical full story only has *accepted* segments — if there's a
+    // freshly-generated draft still waiting on "對，就是這樣", tack it on too
+    // so reading the full story doesn't leave off the most recent sentence.
+    const fullText = pendingText ? `${full.text}\n\n${pendingText}` : full.text
+    storyState = { ...storyState, fullText }
     uiStep = 'full-story'
   } catch {
     setError('讀取完整故事時出了點問題，請再試一次。')
@@ -411,8 +408,6 @@ function resetAll() {
   childIdeaInput = ''
   lastQuestion = null
   lastQuestionOptions = []
-  showSupplementInput = false
-  supplementInput = ''
   uiStep = 'intro'
   render()
 }
@@ -478,7 +473,6 @@ function renderCamera() {
   actions.className = 'actions'
   actions.append(button('拍照', capturePhoto, { disabled: !cameraStream || loading }))
   if (photos.length > 0) {
-    actions.append(button('重拍', retakeLastPhoto, { disabled: loading }))
     actions.append(
       button('讓 AI 看看這張畫', () => void submitPhotoAsRevision(), { disabled: loading }),
     )
@@ -532,9 +526,6 @@ function renderCharacterNaming(prompt, candidate) {
       disabled: loading,
     }))
   }
-  actions.append(
-    button('先跳過', () => decideCurrentPrompt('skip'), { className: 'secondary', disabled: loading }),
-  )
   actionPanel.append(actions)
 }
 
@@ -567,8 +558,9 @@ function renderGrounding() {
 
   const actions = document.createElement('div')
   actions.className = 'actions'
-  const labels = { confirm: '對，就是這樣', reject: '不是', skip: '先跳過', correct: '其他…' }
+  const labels = { confirm: '對，就是這樣', reject: '不對，不是這樣', correct: '是其他東西' }
   for (const action of prompt.allowed_actions) {
+    if (action === 'skip') continue
     if (action === 'correct') {
       actions.append(
         button(labels.correct, () => { showCustomInput = true; render() }, {
@@ -721,18 +713,10 @@ function renderStory() {
     actions.append(button('對，就是這樣', () => {
       lastQuestion = proposal.question
       lastQuestionOptions = proposal.question_options || []
-      showSupplementInput = false
-      supplementInput = ''
       void groundStoryProposal('accept')
     }, { disabled: loading }))
     actions.append(
       button('不是，我要改寫…', () => { storyAction = 'correct'; render() }, {
-        className: 'secondary',
-        disabled: loading,
-      }),
-    )
-    actions.append(
-      button('不是，換個方向…', () => { storyAction = 'redirect'; render() }, {
         className: 'secondary',
         disabled: loading,
       }),
@@ -744,7 +728,7 @@ function renderStory() {
       form.className = 'custom-answer'
       const input = document.createElement('input')
       input.type = 'text'
-      input.placeholder = storyAction === 'correct' ? '你想怎麼改寫這一段…' : '接下來想怎麼發展…'
+      input.placeholder = '你想怎麼改寫這一段…'
       input.value = customAnswer
       input.addEventListener('input', (event) => { customAnswer = event.target.value })
       const submit = button('送出', () => {
@@ -767,48 +751,16 @@ function renderStory() {
     actionPanel.append(retry)
   }
 
-  const moreActions = document.createElement('div')
-  moreActions.className = 'actions'
-  moreActions.append(
-    button('打字補充故事', () => { showSupplementInput = true; render() }, {
-      className: 'secondary',
-      disabled: loading,
-    }),
-    // Drawing-based supplement (re-open camera mid-story) is turned off for now —
-    // only the typed version is offered.
-  )
   if (segments.length > 0) {
+    const moreActions = document.createElement('div')
+    moreActions.className = 'actions'
     moreActions.append(
-      button('讀完整故事', () => void showFullStory(), { className: 'secondary', disabled: loading }),
+      button('讀完整故事', () => void showFullStory(proposal ? proposal.text : null), {
+        className: 'secondary',
+        disabled: loading,
+      }),
     )
-  }
-  actionPanel.append(moreActions)
-
-  if (showSupplementInput) {
-    const form = document.createElement('div')
-    form.className = 'custom-answer'
-    const input = document.createElement('input')
-    input.type = 'text'
-    input.placeholder = '想再補充什麼細節嗎？'
-    input.value = supplementInput
-    input.addEventListener('input', (event) => { supplementInput = event.target.value })
-    const submit = button('送出', () => {
-      const text = supplementInput.trim()
-      if (!text) {
-        setError('請先輸入文字。')
-        return
-      }
-      if (blockIfUnsafe(text)) return
-      showSupplementInput = false
-      supplementInput = ''
-      if (proposal) {
-        void regenerateStoryProposal(text)
-      } else {
-        void requestStoryProposal(text)
-      }
-    }, { disabled: loading })
-    form.append(input, submit)
-    actionPanel.append(form)
+    actionPanel.append(moreActions)
   }
 }
 
