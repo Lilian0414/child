@@ -24,3 +24,13 @@ def test_full_story_panel_starts_at_top_and_remains_scrollable() -> None:
     assert "#text-panel.full-story-panel" in styles
     assert "justify-content: flex-start" in styles
     assert "overflow-y: auto" in styles
+
+
+def test_voice_and_submit_controls_wrap_below_the_full_width_input() -> None:
+    styles = (
+        Path(__file__).parents[4] / "apps" / "web" / "style.css"
+    ).read_text()
+
+    assert "grid-template-columns: minmax(0, 1fr) minmax(0, 2fr)" in styles
+    assert "grid-column: 1 / -1" in styles
+    assert "white-space: nowrap" in styles
