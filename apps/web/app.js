@@ -558,7 +558,7 @@ function renderGrounding() {
 
   const actions = document.createElement('div')
   actions.className = 'actions'
-  const labels = { confirm: '對', reject: '沒有這個東西', correct: '是其他東西' }
+  const labels = { confirm: '對，就是這樣', reject: '不對，不是這樣', correct: '是其他東西' }
   for (const action of prompt.allowed_actions) {
     if (action === 'skip') continue
     if (action === 'correct') {
