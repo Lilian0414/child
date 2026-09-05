@@ -14,14 +14,39 @@ from child_agent_api.story import StoryProviderResult
 GMI_BASE_URL = "https://api.gmi-serving.com/v1"
 MODEL = "MiniMaxAI/MiniMax-M3"
 
-_SENTENCE_BOUNDARY = re.compile(r"(?<=[。！？!?])")
+# Sentence-ending punctuation, plus any closing quote/bracket immediately
+# after it (e.g. 。」) — the quote still belongs to the sentence that just
+# ended, not the start of the next one.
+_SENTENCE_END = re.compile(r"[。！？!?][」』”’\)）]*")
+
+
+def _sentence_parts(text: str) -> list[str]:
+    pieces = _SENTENCE_END.split(text)
+    delimiters = _SENTENCE_END.findall(text)
+    parts = []
+    for index, piece in enumerate(pieces):
+        delimiter = delimiters[index] if index < len(delimiters) else ""
+        parts.append(piece + delimiter)
+    return [part for part in parts if part.strip()]
 # A trailing "（選項一/選項二）" (full- or half-width parens) right after the
 # question mark — the model's suggested short answers for the two option buttons.
-_OPTIONS_SUFFIX = re.compile(r"^[（(]\s*([^（）()/]{1,10})\s*/\s*([^（）()/]{1,10})\s*[）)]$")
+_OPTIONS_SUFFIX = re.compile(
+    r"^[（(]\s*([^（）()/／]{1,10})\s*[/／]\s*([^（）()/／]{1,10})\s*[）)]$"
+)
 # The model sometimes wraps the *whole* "question? optionA/optionB" in one
 # parenthetical instead of putting the question outside — handle that shape too.
+# It also sometimes uses a full-width "／" instead of "/" as the separator.
 _QUESTION_AND_OPTIONS_IN_PARENS = re.compile(
-    r"[（(]\s*([^（）()]*?[?？])\s*([^（）()/]{1,10})\s*/\s*([^（）()/]{1,10})\s*[）)]\s*$"
+    r"[（(]\s*([^（）()]*?[?？])\s*([^（）()/／]{1,10})\s*[/／]\s*([^（）()/／]{1,10})\s*[）)]\s*$"
+)
+# Last-resort fallback: a trailing "（...？...）" with no "/" options at all —
+# still worth pulling out as a question (with generic Yes/No-style buttons)
+# rather than leaving the raw parenthetical stuck in the story text.
+_BARE_QUESTION_IN_PARENS = re.compile(r"[（(]([^（）()]*[?？][^（）()]*)[）)]\s*$")
+# The model also sometimes double-nests: "（question？（optA/optB））".
+_NESTED_QUESTION_AND_OPTIONS = re.compile(
+    r"[（(]\s*([^（）()]*?[?？])\s*[（(]\s*([^（）()/／]{1,10})\s*[/／]\s*"
+    r"([^（）()/／]{1,10})\s*[）)]\s*[）)]\s*$"
 )
 
 
@@ -29,6 +54,14 @@ def _split_question(text: str) -> tuple[str, str | None, list[str]]:
     """Pull a trailing interactive question (and its optional suggested-answer
     pair) off the generated text, so it can be shown to the child separately
     from the story's own narration."""
+    nested_match = _NESTED_QUESTION_AND_OPTIONS.search(text)
+    if nested_match:
+        narration = text[: nested_match.start()].strip()
+        question = nested_match.group(1).strip()
+        if narration and question:
+            options = [nested_match.group(2).strip(), nested_match.group(3).strip()]
+            return narration, question, options
+
     combined_match = _QUESTION_AND_OPTIONS_IN_PARENS.search(text)
     if combined_match:
         narration = text[: combined_match.start()].strip()
@@ -37,7 +70,7 @@ def _split_question(text: str) -> tuple[str, str | None, list[str]]:
             options = [combined_match.group(2).strip(), combined_match.group(3).strip()]
             return narration, question, options
 
-    parts = [part for part in _SENTENCE_BOUNDARY.split(text) if part.strip()]
+    parts = _sentence_parts(text)
     options = []
     if len(parts) > 1:
         options_match = _OPTIONS_SUFFIX.match(parts[-1].strip())
@@ -49,6 +82,13 @@ def _split_question(text: str) -> tuple[str, str | None, list[str]]:
         question = parts[-1].strip()
         if narration:
             return narration, question, options
+
+    bare_match = _BARE_QUESTION_IN_PARENS.search(text)
+    if bare_match:
+        narration = text[: bare_match.start()].strip()
+        question = bare_match.group(1).strip()
+        if narration and question:
+            return narration, question, []
     return text, None, []
 
 
