@@ -101,6 +101,13 @@ The Core observer boundary accepts only allowlisted visible information. Current
 - `fact`
 - `relationship`
 
+`character.candidate.visible_description` is required and non-empty. Core owns conversion of that
+visible description (and optional `visible_gesture`) into a canonical `Character`; browser confirm
+and correction flows must not supply canonical names or IDs. Added/changed/uncertain `fact` and
+`relationship` observations lack canonical references and therefore remain proposal/evidence rather
+than child-facing prompts. Every returned object, object-count, or character prompt has the four
+actions `confirm / correct / reject / skip`.
+
 Typical observation batch passed into the Core:
 
 ```json
