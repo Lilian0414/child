@@ -3,14 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      name="description"
-      content="Child-Grounded Story Agent developer scaffold"
-    />
+    <meta name="description" content="Child-Grounded Story Agent" />
     <title>Child-Grounded Story Agent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <header class="top-bar">
+      <span class="fixture-badge">AI 即時生成</span>
+      <span class="scene-count" id="scene-count" hidden></span>
+    </header>
+    <main id="story-body">
+      <p class="eyebrow">一起改變故事</p>
+      <h1>畫一個故事</h1>
+      <p class="summary">先拍下你的畫作，AI 會看看你畫了什麼，一起把它變成一個故事。</p>
+      <div class="actions">
+        <button id="start-button">📷 打開相機拍照</button>
+      </div>
+    </main>
+    <p role="status" id="status-message" hidden></p>
+    <p class="error" role="alert" id="error-message" hidden></p>
+    <audio id="narration-audio" hidden></audio>
+    <video id="camera-video" autoplay playsinline hidden></video>
+    <canvas id="camera-canvas" hidden></canvas>
+    <script src="app.js"></script>
   </body>
 </html>

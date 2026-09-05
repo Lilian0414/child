@@ -46,7 +46,14 @@ class OpenAICompatibleObserver:
             f"{self.base_url}/chat/completions",
             data=json.dumps(wire).encode(),
             method="POST",
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                # Some providers front their API with Cloudflare, which blocks the
+                # default `Python-urllib/x.y` User-Agent as a bot signature (error
+                # code 1010) even with a valid key and payload.
+                "User-Agent": "child-agent-api/0.1 (+observer-adapter)",
+            },
         )
         with urlopen(request, timeout=timeout) as response:  # noqa: S310 - configured trusted endpoint
             payload = json.load(response)
