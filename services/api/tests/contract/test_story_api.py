@@ -29,7 +29,7 @@ def test_story_api_proposes_from_the_offline_template_provider_by_default(
 def test_story_api_propose_ground_project_and_restore(
     service: WorldStateService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("CHILD_LIVE_MODE", "gemma")
+    monkeypatch.setattr("child_agent_api.main.live_mode", "gemma")
     app.dependency_overrides[get_service] = lambda: service
     client = TestClient(app)
     fake_provider = MagicMock()
@@ -61,7 +61,7 @@ def test_story_api_propose_ground_project_and_restore(
 def test_story_api_maps_provider_config_error_to_bad_gateway(
     service: WorldStateService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("CHILD_LIVE_MODE", "gemma")
+    monkeypatch.setattr("child_agent_api.main.live_mode", "gemma")
     app.dependency_overrides[get_service] = lambda: service
     client = TestClient(app)
     with patch(

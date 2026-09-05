@@ -1,6 +1,7 @@
 """FastAPI application and the small public deterministic-demo boundary."""
 
 import os
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import uuid4
@@ -58,27 +59,31 @@ load_dotenv(REPO_ROOT / ".env")
 
 DEFAULT_CORS_ORIGINS = ""
 
-# CHILD_LIVE_MODE selects which live model backs the ObserverProvider/StoryProvider
-# boundaries: "gemma" or "minimax" call out to a real model; anything else (unset,
-# by default) uses fully offline, network-free demo providers. Same API surface
-# either way — only this wiring changes, the frontend and Core never know.
+# live_mode selects which live model backs the ObserverProvider/StoryProvider
+# boundaries: "gemma" or "minimax" call out to a real model; "demo" (the default,
+# also the CHILD_LIVE_MODE env var fallback) uses fully offline, network-free demo
+# providers. Same API surface either way — only this wiring changes, the frontend
+# and Core never know. Mutable at runtime via /v1/config/live-mode so the frontend
+# can switch without restarting the server.
 ProviderConfigError = (GemmaConfigError, MiniMaxConfigError)
+LiveMode = Literal["demo", "gemma", "minimax"]
+LIVE_MODES: tuple[LiveMode, ...] = ("demo", "gemma", "minimax")
+_env_live_mode = os.getenv("CHILD_LIVE_MODE")
+live_mode: LiveMode = _env_live_mode if _env_live_mode in LIVE_MODES else "demo"  # type: ignore[assignment]
 
 
 def current_observer_provider() -> ObserverProvider:
-    mode = os.getenv("CHILD_LIVE_MODE")
-    if mode == "gemma":
+    if live_mode == "gemma":
         return gemma_observer()
-    if mode == "minimax":
+    if live_mode == "minimax":
         return minimax_observer()
     return demo_observer()
 
 
 def current_story_provider() -> StoryProvider:
-    mode = os.getenv("CHILD_LIVE_MODE")
-    if mode == "gemma":
+    if live_mode == "gemma":
         return GemmaStoryProvider()
-    if mode == "minimax":
+    if live_mode == "minimax":
         return MiniMaxStoryProvider()
     return TemplateStoryProvider()
 
@@ -160,6 +165,14 @@ class TTSRequest(ApiModel):
     text: Annotated[str, Field(min_length=1, max_length=2000)]
 
 
+class LiveModeResponse(ApiModel):
+    live_mode: LiveMode
+
+
+class SetLiveModeRequest(ApiModel):
+    live_mode: LiveMode
+
+
 engine = create_database_engine()
 application_service = WorldStateService(engine)
 
@@ -210,6 +223,18 @@ def domain_error(_request: Request, error: DomainError) -> JSONResponse:
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok", service="child-agent-api", version=app.version)
+
+
+@app.get("/v1/config/live-mode", response_model=LiveModeResponse)
+def get_live_mode() -> LiveModeResponse:
+    return LiveModeResponse(live_mode=live_mode)
+
+
+@app.post("/v1/config/live-mode", response_model=LiveModeResponse)
+def set_live_mode(body: SetLiveModeRequest) -> LiveModeResponse:
+    global live_mode
+    live_mode = body.live_mode
+    return LiveModeResponse(live_mode=live_mode)
 
 
 @app.post("/v1/tts")
@@ -439,4 +464,16 @@ def choose(session_id: str, body: ChoiceRequest, service: Service) -> FlowView:
 
 web_dir = REPO_ROOT / "apps" / "web"
 if web_dir.is_dir():
-    app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
+
+    class NoCacheStaticFiles(StaticFiles):
+        """Dev/demo app iterates on the frontend constantly — never let the
+        browser silently serve a stale cached copy of index.html/app.js/style.css."""
+
+        async def get_response(
+            self, path: str, scope: MutableMapping[str, object]
+        ) -> Response:
+            response = await super().get_response(path, scope)
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
+    app.mount("/", NoCacheStaticFiles(directory=web_dir, html=True), name="web")
