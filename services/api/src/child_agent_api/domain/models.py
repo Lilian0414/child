@@ -266,6 +266,8 @@ class StoryProposal(Contract):
     # Optional interactive prompt for the child, kept separate from `text` so a
     # provider's engagement question never becomes part of canonical story prose.
     question: str | None = Field(default=None, max_length=200)
+    # Up to two short suggested answers for `question`, used as button labels.
+    question_options: list[str] = Field(default_factory=list, max_length=2)
     world_dependencies: list[Identifier] = Field(default_factory=list, max_length=10)
     status: Literal["pending", "accepted", "superseded", "rejected"] = "pending"
 

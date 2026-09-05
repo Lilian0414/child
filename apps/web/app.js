@@ -30,6 +30,9 @@ let storyState = null // latest StoryState from the API
 let storyAction = null // 'correct' | 'redirect' while its free-text box is open
 let childIdeaInput = '' // the child's plot idea, typed before each AI-written segment
 let lastQuestion = null // the AI's interactive question from the segment just accepted
+let lastQuestionOptions = [] // up to 2 AI-suggested short answers for lastQuestion
+let showSupplementInput = false // typed "add more detail" box, mid-story (drawing-based version is off for now)
+let supplementInput = ''
 
 function newKey(prefix) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`
@@ -46,6 +49,31 @@ function setError(message) {
   } else {
     errorMessage.hidden = true
   }
+}
+
+// ---- Content guard: block obviously unsafe (sexual / violent) child input
+// before it ever reaches the AI. A blunt keyword check, not a full classifier —
+// good enough to catch explicit content, not meant to be exhaustive. ----
+
+const UNSAFE_TERMS = [
+  // sexual
+  '色情', '做愛', '性交', '性愛', '裸體', '裸照', '強暴', '強姦', '性侵',
+  '雞巴', '陰莖', '陰道', '屌', '打炮', '約炮', 'porn', 'sex', 'nude', 'rape',
+  // violence
+  '殺死', '砍死', '打死', '虐待', '虐殺', '槍殺', '刺死', '血腥', '殘忍',
+  '自殺', '自殘', '爆頭', 'kill', 'murder', 'suicide', 'stab', 'behead',
+]
+
+function containsUnsafeContent(text) {
+  const normalized = text.toLowerCase()
+  return UNSAFE_TERMS.some((term) => normalized.includes(term.toLowerCase()))
+}
+
+// Returns true (and shows the re-enter prompt) if the text was blocked.
+function blockIfUnsafe(text) {
+  if (!containsUnsafeContent(text)) return false
+  setError('這句話裡有不適合的內容，請重新輸入喔。')
+  return true
 }
 
 async function api(path, init) {
@@ -244,7 +272,12 @@ async function resolveRevision() {
 
 function submitStoryIdea() {
   const idea = childIdeaInput.trim()
-  void requestStoryProposal(idea || null)
+  if (!idea) {
+    setError('請先輸入文字，或按「讓 AI 自由發揮」。')
+    return
+  }
+  if (blockIfUnsafe(idea)) return
+  void requestStoryProposal(idea)
 }
 
 function skipStoryIdea() {
@@ -377,6 +410,9 @@ function resetAll() {
   customAnswer = ''
   childIdeaInput = ''
   lastQuestion = null
+  lastQuestionOptions = []
+  showSupplementInput = false
+  supplementInput = ''
   uiStep = 'intro'
   render()
 }
@@ -472,16 +508,19 @@ function renderCharacterNaming(prompt, candidate) {
   input.placeholder = '幫他取個名字…'
   input.value = customAnswer
   input.addEventListener('input', (event) => { customAnswer = event.target.value })
+  const submitCharacterName = () => {
+    const name = customAnswer.trim()
+    if (!name) {
+      setError('請先幫他取個名字。')
+      return
+    }
+    if (blockIfUnsafe(name)) return
+    decideCurrentPrompt('correct', { visible_description: name })
+  }
   input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && customAnswer.trim()) {
-      decideCurrentPrompt('correct', { visible_description: customAnswer.trim() })
-    }
+    if (event.key === 'Enter') submitCharacterName()
   })
-  const submit = button('取好了', () => {
-    if (customAnswer.trim()) {
-      decideCurrentPrompt('correct', { visible_description: customAnswer.trim() })
-    }
-  }, { disabled: loading })
+  const submit = button('取好了', submitCharacterName, { disabled: loading })
   form.append(input, submit)
   actionPanel.append(form)
 
@@ -554,13 +593,31 @@ function renderGrounding() {
     input.value = customAnswer
     input.addEventListener('input', (event) => { customAnswer = event.target.value })
     const submit = button('送出', () => {
-      if (customAnswer.trim()) {
-        decideCurrentPrompt('correct', buildSuppliedValue(candidate, customAnswer.trim()))
+      const text = customAnswer.trim()
+      if (!text) {
+        setError('請先輸入文字。')
+        return
+      }
+      if (!blockIfUnsafe(text)) {
+        decideCurrentPrompt('correct', buildSuppliedValue(candidate, text))
       }
     }, { disabled: loading })
     form.append(input, submit)
     actionPanel.append(form)
   }
+}
+
+function answerLastQuestion(answer) {
+  const idea = `孩子回答了問題「${lastQuestion}」：${answer}`
+  lastQuestion = null
+  lastQuestionOptions = []
+  void requestStoryProposal(idea)
+}
+
+function skipLastQuestion() {
+  lastQuestion = null
+  lastQuestionOptions = []
+  render()
 }
 
 function renderStoryIdea() {
@@ -577,8 +634,23 @@ function renderStoryIdea() {
 
   if (lastQuestion) {
     const question = document.createElement('h2')
+    question.className = 'question-prompt'
     question.textContent = lastQuestion
     textPanel.append(question)
+
+    photoStrip()
+
+    const options = lastQuestionOptions.length === 2 ? lastQuestionOptions : ['好呀', '不要']
+    const actions = document.createElement('div')
+    actions.className = 'actions'
+    for (const option of options) {
+      actions.append(button(option, () => answerLastQuestion(option), { disabled: loading }))
+    }
+    actions.append(
+      button('跳過問題', skipLastQuestion, { className: 'secondary', disabled: loading }),
+    )
+    actionPanel.append(actions)
+    return
   }
 
   const prompt = document.createElement('p')
@@ -596,7 +668,7 @@ function renderStoryIdea() {
   input.value = childIdeaInput
   input.addEventListener('input', (event) => { childIdeaInput = event.target.value })
   input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && childIdeaInput.trim()) submitStoryIdea()
+    if (event.key === 'Enter') submitStoryIdea()
   })
   const submit = button('讓 AI 寫成故事', submitStoryIdea, { disabled: loading })
   form.append(input, submit)
@@ -636,12 +708,8 @@ function renderStory() {
     proposalText.className = 'summary'
     proposalText.textContent = proposal.text
     textPanel.append(proposalText)
-
-    if (proposal.question) {
-      const question = document.createElement('h2')
-      question.textContent = proposal.question
-      textPanel.append(question)
-    }
+    // The interactive question (if any) is intentionally not shown here — it
+    // only appears after the child accepts, as its own dedicated step.
   }
 
   photoStrip()
@@ -652,6 +720,9 @@ function renderStory() {
     actions.append(button('唸給我聽', () => void listen(proposal.text), { className: 'listen' }))
     actions.append(button('對，就是這樣', () => {
       lastQuestion = proposal.question
+      lastQuestionOptions = proposal.question_options || []
+      showSupplementInput = false
+      supplementInput = ''
       void groundStoryProposal('accept')
     }, { disabled: loading }))
     actions.append(
@@ -677,7 +748,12 @@ function renderStory() {
       input.value = customAnswer
       input.addEventListener('input', (event) => { customAnswer = event.target.value })
       const submit = button('送出', () => {
-        if (customAnswer.trim()) void regenerateStoryProposal(customAnswer.trim())
+        const text = customAnswer.trim()
+        if (!text) {
+          setError('請先輸入文字。')
+          return
+        }
+        if (!blockIfUnsafe(text)) void regenerateStoryProposal(text)
       }, { disabled: loading })
       form.append(input, submit)
       actionPanel.append(form)
@@ -694,7 +770,12 @@ function renderStory() {
   const moreActions = document.createElement('div')
   moreActions.className = 'actions'
   moreActions.append(
-    button('再畫一點，補充故事', () => void openCamera(), { className: 'secondary', disabled: loading }),
+    button('打字補充故事', () => { showSupplementInput = true; render() }, {
+      className: 'secondary',
+      disabled: loading,
+    }),
+    // Drawing-based supplement (re-open camera mid-story) is turned off for now —
+    // only the typed version is offered.
   )
   if (segments.length > 0) {
     moreActions.append(
@@ -702,6 +783,33 @@ function renderStory() {
     )
   }
   actionPanel.append(moreActions)
+
+  if (showSupplementInput) {
+    const form = document.createElement('div')
+    form.className = 'custom-answer'
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.placeholder = '想再補充什麼細節嗎？'
+    input.value = supplementInput
+    input.addEventListener('input', (event) => { supplementInput = event.target.value })
+    const submit = button('送出', () => {
+      const text = supplementInput.trim()
+      if (!text) {
+        setError('請先輸入文字。')
+        return
+      }
+      if (blockIfUnsafe(text)) return
+      showSupplementInput = false
+      supplementInput = ''
+      if (proposal) {
+        void regenerateStoryProposal(text)
+      } else {
+        void requestStoryProposal(text)
+      }
+    }, { disabled: loading })
+    form.append(input, submit)
+    actionPanel.append(form)
+  }
 }
 
 function renderFullStory() {
