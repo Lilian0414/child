@@ -1,6 +1,19 @@
+@font-face {
+  font-family: "BpmfGenSenRounded";
+  src: url("fonts/BpmfGenSenRounded-R.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "BpmfGenSenRounded";
+  src: url("fonts/BpmfGenSenRounded-B.ttf") format("truetype");
+  font-weight: 700 900;
+  font-display: swap;
+}
+
 :root {
   color: #063456;
-  font-family: "Nunito", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  font-family: "BpmfGenSenRounded", "Nunito", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -102,7 +115,7 @@ body::after { width: 16rem; height: 16rem; bottom: -4rem; right: 6%; opacity: .6
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(20rem, 34%) 1fr;
+  grid-template-columns: minmax(26rem, 48%) 1fr;
   gap: 0;
 }
 
