@@ -144,6 +144,38 @@ def test_story_grounding_is_idempotent_and_rejects_stale_version(
         service.request_story_proposal("ses_synthetic", 0)
 
 
+def test_completion_is_persisted_idempotent_and_rejects_pending_or_stale(
+    service: WorldStateService, engine: object
+) -> None:
+    with pytest.raises(InvalidReferenceError, match="grounded current segment"):
+        service.complete_story("ses_synthetic", 0, "complete-empty")
+    proposal = service.request_story_proposal("ses_synthetic", 0).current_proposal
+    assert proposal is not None
+    with pytest.raises(InvalidReferenceError, match="pending story proposal"):
+        service.complete_story("ses_synthetic", 0, "complete-pending")
+    service.ground_story_proposal(
+        "ses_synthetic",
+        proposal.proposal_id,
+        StoryGrounding(action="accept"),
+        0,
+        "ground-before-complete",
+    )
+    with pytest.raises(VersionConflictError):
+        service.complete_story("ses_synthetic", 0, "complete-stale")
+
+    result = service.complete_story("ses_synthetic", 1, "complete-once")
+    assert result.state_version == 2
+    assert service.complete_story("ses_synthetic", 1, "complete-once") == result
+    rebuilt = WorldStateService(engine)  # type: ignore[arg-type]
+    assert rebuilt.get_session("ses_synthetic").status == "COMPLETE"
+    assert rebuilt.full_story("ses_synthetic") == result
+    assert rebuilt.event_payloads("ses_synthetic", "STORY_COMPLETED") == [
+        result.segment_ids[-1]
+    ]
+    with pytest.raises(InvalidReferenceError, match="session is complete"):
+        rebuilt.request_story_proposal("ses_synthetic", 2)
+
+
 def test_provider_failure_commits_no_proposal(service: WorldStateService) -> None:
     class BrokenProvider:
         def propose(self, world: object, story: object) -> object:

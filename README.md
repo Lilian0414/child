@@ -220,6 +220,9 @@ Core closed loop 已具備完整的狀態能力，現在不是只有 scaffold。
 **完整故事**
 
 - `GET /v1/sessions/{session_id}/story/full` 可取得由 current、已確認 story segments 組成的 canonical full story。
+- 每個 grounded segment 後可繼續故事、修改同一個 drawing/world，或用 `POST /v1/sessions/{session_id}/story/complete` 明確完成；Core 不指定前端如何呈現選項。
+- completion 是 idempotent canonical transition；若仍有 pending proposal 會拒絕完成，不會默認接受未確認文字。
+- `GET /v1/sessions/{session_id}/state` 回傳 typed persisted session aggregate，refresh 後仍可讀到 `status: COMPLETE`。
 - full story 會反映孩子的 correction / redirect，排除 rejected、superseded、unconfirmed 與 stale-invalidated 內容。
 - full story 可在 refresh / persistence reconstruction 後保持一致。
 - 前端可直接把這份 canonical text 用於「播放完整故事」，不需要自行維護第二套故事狀態。

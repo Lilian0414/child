@@ -1,8 +1,8 @@
 # Documentation map
 
-_Last reviewed: 2026-08-29_
+_Last reviewed: 2026-09-05_
 
-本目錄把「為什麼做」「產品要做什麼」「系統如何實現」「如何證明可用」分開維護，避免同一規則散落在 README、簡報與程式碼註解中。
+本目錄把「為什麼做」「產品要做什麼」「系統如何實現」「如何證明可用」「如何交接整合」分開維護，避免同一規則散落在 README、簡報與程式碼註解中。
 
 ## Source of truth
 
@@ -12,6 +12,7 @@ _Last reviewed: 2026-08-29_
 | [PRODUCT_SPEC.md](PRODUCT_SPEC.md) | 使用者、流程、功能需求與產品驗收 | Proposed MVP spec |
 | [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md) | 架構、元件責任、狀態機、失敗處理 | Proposed design |
 | [DATA_CONTRACTS.md](DATA_CONTRACTS.md) | Domain objects、provenance、scene 與 API 契約 | Proposed contracts |
+| [INTEGRATION_HANDOFF.md](INTEGRATION_HANDOFF.md) | 多模態/provider/frontend 要接什麼、不能重做什麼，以及 Local E2E MVP 驗收流程 | Active integration handoff |
 | [AGENT_POLICY.md](AGENT_POLICY.md) | Agent 步驟、結構化輸出、提問與故事規則 | Proposed policy |
 | [SAFETY_PRIVACY.md](SAFETY_PRIVACY.md) | 兒童安全、資料最小化、內容處理與升級 | Required baseline |
 | [DEMO_EVALUATION.md](DEMO_EVALUATION.md) | Demo 劇本、golden cases、指標與 UAT | Proposed verification |
@@ -24,6 +25,7 @@ _Last reviewed: 2026-08-29_
 - **Accepted**：團隊已採用的產品或技術決策；變更時需同步受影響文件。
 - **Implemented**：目前 code path 已符合文件描述。
 - **Verified**：有 repository-native test、UAT 或量測證據支持。
+- **Active integration handoff**：以目前 `main` 的 Core contracts 為基線，提供整合負責人實作與驗收；若 Core contract 改動需同步更新。
 
 文件不能因為寫得完整就被稱為 implemented。README 也不應宣稱尚未跑通的功能。
 
@@ -33,7 +35,7 @@ _Last reviewed: 2026-08-29_
 2. 已接受的 GitHub Issue / decision record。
 3. Product spec 與 data contracts。
 4. Technical design 與 agent policy。
-5. Demo 文案與 README。
+5. Integration handoff、Demo 文案與 README。
 
 若 code、test、Issue 與文件互相矛盾，先停下來確認，不用「看起來合理」的方式自行選一個版本。
 
@@ -55,7 +57,7 @@ _Last reviewed: 2026-08-29_
 
 - Product spec 的 acceptance criteria 是否改變。
 - Data contracts 是否需要版本或 migration。
+- Integration handoff 的 provider/API/ownership boundary 是否仍正確。
 - Agent policy 是否仍與實作一致。
 - Safety policy 是否出現新的資料或內容風險。
 - Demo golden cases 是否需要更新。
-
