@@ -15,17 +15,41 @@ GMI_BASE_URL = "https://api.gmi-serving.com/v1"
 MODEL = "MiniMaxAI/MiniMax-M3"
 
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[。！？!?])")
+# A trailing "（選項一/選項二）" (full- or half-width parens) right after the
+# question mark — the model's suggested short answers for the two option buttons.
+_OPTIONS_SUFFIX = re.compile(r"^[（(]\s*([^（）()/]{1,10})\s*/\s*([^（）()/]{1,10})\s*[）)]$")
+# The model sometimes wraps the *whole* "question? optionA/optionB" in one
+# parenthetical instead of putting the question outside — handle that shape too.
+_QUESTION_AND_OPTIONS_IN_PARENS = re.compile(
+    r"[（(]\s*([^（）()]*?[?？])\s*([^（）()/]{1,10})\s*/\s*([^（）()/]{1,10})\s*[）)]\s*$"
+)
 
 
-def _split_question(text: str) -> tuple[str, str | None]:
-    """Pull a trailing interactive question off the generated text so it can be
-    shown to the child separately from the story's own narration."""
+def _split_question(text: str) -> tuple[str, str | None, list[str]]:
+    """Pull a trailing interactive question (and its optional suggested-answer
+    pair) off the generated text, so it can be shown to the child separately
+    from the story's own narration."""
+    combined_match = _QUESTION_AND_OPTIONS_IN_PARENS.search(text)
+    if combined_match:
+        narration = text[: combined_match.start()].strip()
+        question = combined_match.group(1).strip()
+        if narration and question:
+            options = [combined_match.group(2).strip(), combined_match.group(3).strip()]
+            return narration, question, options
+
     parts = [part for part in _SENTENCE_BOUNDARY.split(text) if part.strip()]
+    options = []
+    if len(parts) > 1:
+        options_match = _OPTIONS_SUFFIX.match(parts[-1].strip())
+        if options_match:
+            options = [options_match.group(1).strip(), options_match.group(2).strip()]
+            parts = parts[:-1]
     if len(parts) > 1 and parts[-1].strip().endswith(("？", "?")):
         narration = "".join(parts[:-1]).strip()
+        question = parts[-1].strip()
         if narration:
-            return narration, parts[-1].strip()
-    return text, None
+            return narration, question, options
+    return text, None, []
 
 
 class MiniMaxConfigError(Exception):
@@ -130,12 +154,21 @@ class MiniMaxStoryProvider:
                         "不要用成語或書面語（例如不要寫「絡繹不絕」「頓時」「不禁」這種詞），"
                         "可以自然地用一點狀聲詞（例如「咻」「碰」「嘻嘻」），語氣活潑、溫暖、"
                         "順著孩子的觀點敘述。"
+                        "句子開頭要有變化：三句裡面只能有一句用名字當開頭，"
+                        "改用「他」「牠」代稱，或用時間、地點、動作開頭"
+                        "（例如「這時候」「突然」「他抬起頭」），讓讀起來不會很像"
+                        "制式報告。"
                         "長度限制很重要：故事本身最多兩個句號、不超過 50 個字，"
                         "像接龍故事一樣一次只推進一點點，不要一次講完整個發展。"
                         "故事本身只寫敘述，不要在敘述句子裡夾雜問孩子的話。"
                         "如果想跟孩子互動，把問句放在故事之後、另起一句，"
                         "當作單獨的一句話（例如問他接下來想怎麼做、或問他的感覺），"
-                        "不是每次都要問；不問的話就不要加。只回傳故事文字本身，不要其他說明。"
+                        "不是每次都要問；不問的話就不要加。"
+                        "如果有問句，緊接在問號後面用全形括號附上兩個最簡短、"
+                        "適合當按鈕文字的建議回答，用「/」分隔，"
+                        "例如：「你猜牠會不會被發現呢？（會/不會）」或"
+                        "「你想牠現在是什麼心情？（開心/緊張）」。"
+                        "只回傳故事文字本身，不要其他說明。"
                     ),
                 },
                 {
@@ -151,8 +184,8 @@ class MiniMaxStoryProvider:
         text = (response.choices[0].message.content or "").strip()
         if not text:
             text = "故事在這裡靜靜地停了一下，等著你告訴我接下來會發生什麼。"
-        text = text[:120]  # safety cap; prompt asks for <=50 chars, 2 periods
-        narration, question = _split_question(text)
+        text = text[:150]  # safety cap; prompt asks for <=50 chars, 2 periods (plus options suffix)
+        narration, question, question_options = _split_question(text)
 
         dependencies: list[str] = []
         for character in world.characters:
@@ -162,5 +195,8 @@ class MiniMaxStoryProvider:
             if obj.type and obj.type in narration:
                 dependencies.append(obj.object_id)
         return StoryProviderResult(
-            text=narration, question=question, world_dependencies=dependencies[:10]
+            text=narration,
+            question=question,
+            question_options=question_options,
+            world_dependencies=dependencies[:10],
         )

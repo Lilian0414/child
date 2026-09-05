@@ -385,6 +385,7 @@ class WorldStateService:
                 segment_index=story.next_segment_index,
                 text=provider_result.text,
                 question=provider_result.question,
+                question_options=provider_result.question_options,
                 world_dependencies=provider_result.world_dependencies,
             )
             active = (
@@ -444,6 +445,7 @@ class WorldStateService:
                 update={
                     "text": provider_result.text,
                     "question": provider_result.question,
+                    "question_options": provider_result.question_options,
                     "world_dependencies": provider_result.world_dependencies,
                 }
             )

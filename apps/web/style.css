@@ -239,6 +239,12 @@ h2 {
   color: #0b4f7a;
 }
 
+/* Distinct from narration/heading colors so a system question always reads
+   as "the app is asking you something" rather than part of the story. */
+h2.question-prompt {
+  color: #b5541f;
+}
+
 .summary {
   margin: 1.1rem 0;
   color: #214c67;
