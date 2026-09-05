@@ -81,6 +81,62 @@ async function api(path, init) {
   return payload
 }
 
+// ---- Voice input: record from the mic, transcribe via Groq, drop the text
+// straight into whichever <input> the button sits next to. Works exactly
+// like typing — same field, same content guard, same submit button. ----
+
+function createMicButton(input) {
+  const mic = document.createElement('button')
+  mic.type = 'button'
+  mic.className = 'mic-button'
+  mic.textContent = '用說的'
+  let recorder = null
+  let chunks = []
+
+  mic.addEventListener('click', async () => {
+    if (recorder && recorder.state === 'recording') {
+      recorder.stop()
+      return
+    }
+    setError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      chunks = []
+      recorder = new MediaRecorder(stream)
+      recorder.addEventListener('dataavailable', (event) => chunks.push(event.data))
+      recorder.addEventListener('stop', async () => {
+        for (const track of stream.getTracks()) track.stop()
+        mic.textContent = '…'
+        mic.disabled = true
+        try {
+          const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+          const form = new FormData()
+          form.append('audio', blob, 'voice.webm')
+          const result = await api('/v1/stt', { method: 'POST', body: form })
+          const heard = (result.text || '').trim()
+          if (heard) {
+            input.value = input.value ? `${input.value} ${heard}` : heard
+            input.dispatchEvent(new Event('input'))
+          } else {
+            setError('沒有聽清楚，請再試一次或直接打字。')
+          }
+        } catch {
+          setError('語音辨識失敗，請再試一次或直接打字。')
+        } finally {
+          mic.textContent = '用說的'
+          mic.disabled = false
+        }
+      })
+      recorder.start()
+      mic.textContent = '我說完了'
+    } catch {
+      setError('無法使用麥克風，請確認瀏覽器權限，或直接打字。')
+    }
+  })
+
+  return mic
+}
+
 // ---- Camera (photobooth-style capture) ----
 
 async function openCamera() {
@@ -515,7 +571,7 @@ function renderCharacterNaming(prompt, candidate) {
     if (event.key === 'Enter') submitCharacterName()
   })
   const submit = button('取好了', submitCharacterName, { disabled: loading })
-  form.append(input, submit)
+  form.append(input, createMicButton(input), submit)
   actionPanel.append(form)
 
   const actions = document.createElement('div')
@@ -594,7 +650,7 @@ function renderGrounding() {
         decideCurrentPrompt('correct', buildSuppliedValue(candidate, text))
       }
     }, { disabled: loading })
-    form.append(input, submit)
+    form.append(input, createMicButton(input), submit)
     actionPanel.append(form)
   }
 }
@@ -663,7 +719,7 @@ function renderStoryIdea() {
     if (event.key === 'Enter') submitStoryIdea()
   })
   const submit = button('讓 AI 寫成故事', submitStoryIdea, { disabled: loading })
-  form.append(input, submit)
+  form.append(input, createMicButton(input), submit)
   actionPanel.append(form)
 
   const actions = document.createElement('div')
@@ -739,7 +795,7 @@ function renderStory() {
         }
         if (!blockIfUnsafe(text)) void regenerateStoryProposal(text)
       }, { disabled: loading })
-      form.append(input, submit)
+      form.append(input, createMicButton(input), submit)
       actionPanel.append(form)
     }
   } else if (!loading) {

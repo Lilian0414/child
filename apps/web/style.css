@@ -431,12 +431,20 @@ button.listen:active { box-shadow: 0 1px 0 #dc8521, 0 4px 8px rgba(150, 83, 6, .
 .custom-answer input::placeholder { color: #557b92; font-weight: 600; opacity: 1; }
 .custom-answer button { min-height: 3.8rem; }
 
+.mic-button {
+  flex: none;
+  min-width: 6.5rem;
+  min-height: 3.8rem;
+  padding: 0 1rem;
+  font-size: .95rem;
+  white-space: nowrap;
+}
+
 @media (max-width: 34rem) {
   .top-bar { align-items: flex-start; }
-  .mode-switch { flex-wrap: wrap; }
-  .mode-switch button { padding-inline: .75rem; }
   .panel { padding: 1rem 0; }
   .custom-answer { flex-direction: column; }
+  .custom-answer .mic-button { width: 100%; }
   .actions { grid-template-columns: 1fr; }
 }
 
