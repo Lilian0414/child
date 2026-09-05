@@ -834,11 +834,14 @@ function renderFullStory() {
   actions.append(button('唸給我聽', () => void listen(storyState.fullText), { className: 'listen' }))
   actions.append(button('再畫一個新故事', resetAll, { className: 'secondary' }))
   actionPanel.append(actions)
+
+  textPanel.scrollTop = 0
 }
 
 function render() {
   actionPanel.replaceChildren()
   textPanel.replaceChildren()
+  textPanel.classList.toggle('full-story-panel', uiStep === 'full-story')
   sceneCount.hidden = true
   statusMessage.hidden = true
   if (uiStep !== 'camera') cameraVideo.hidden = true
