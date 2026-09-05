@@ -37,7 +37,7 @@ Allowed item shapes are distinguished by kind, and candidate may contain only:
 - object_count: {"label": string, "count": integer >= 1}
 - object: {"label": string, optional "color": string, optional "position": string,
   optional "visible_text": string}
-- character: {optional "visible_description": string, optional "visible_gesture": string}
+- character: {"visible_description": non-empty string, optional "visible_gesture": string}
 - fact: {"visible_expression": string}
 - relationship: {"visible": string, "relationship": "unknown"}
 Item keys are observation_id, kind, candidate, confidence, optional needs_confirmation,
@@ -70,7 +70,7 @@ class ObjectCandidate(_Candidate):
 
 
 class CharacterCandidate(_Candidate):
-    visible_description: str | None = Field(default=None, max_length=200)
+    visible_description: str = Field(min_length=1, max_length=100)
     visible_gesture: str | None = Field(default=None, max_length=100)
 
 

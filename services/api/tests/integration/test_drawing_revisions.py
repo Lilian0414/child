@@ -167,7 +167,9 @@ def test_changed_and_removed_require_authority(service: WorldStateService) -> No
     assert len(resolved.world.retired_ids) == 1
 
 
-def test_every_observer_shape_has_a_safe_grounding_action(service: WorldStateService) -> None:
+def test_only_safely_canonicalizable_observer_shapes_are_grounding_prompts(
+    service: WorldStateService,
+) -> None:
     payload = ObserverPayload.model_validate(
         {
             "items": [
@@ -214,50 +216,47 @@ def test_every_observer_shape_has_a_safe_grounding_action(service: WorldStateSer
         "ses_synthetic", "rev_all_shapes", batch_from_boundary, 0, "revision-all-shapes"
     )
     prompts = {prompt.kind: prompt for prompt in state.prompts}
-    assert "confirm" in prompts[ObservationKind.OBJECT].allowed_actions
-    assert "confirm" in prompts[ObservationKind.OBJECT_COUNT].allowed_actions
-    for kind in (ObservationKind.CHARACTER, ObservationKind.FACT, ObservationKind.RELATIONSHIP):
-        assert prompts[kind].allowed_actions == ["correct", "reject", "skip"]
-
-    character = next(
-        candidate for candidate in state.candidates if candidate.kind == ObservationKind.CHARACTER
+    assert set(prompts) == {
+        ObservationKind.OBJECT,
+        ObservationKind.OBJECT_COUNT,
+        ObservationKind.CHARACTER,
+    }
+    assert all(
+        prompt.allowed_actions == ["confirm", "correct", "reject", "skip"]
+        for prompt in prompts.values()
     )
-    with pytest.raises(InvalidReferenceError, match="action is not allowed"):
-        service.resolve_revision(
-            "ses_synthetic",
-            "rev_all_shapes",
-            [CandidateDecision(candidate_id=character.candidate_id, action="confirm")],
-            "ans_invalid_confirm",
-            0,
-            "resolve-invalid-confirm",
-        )
+
+    for kind in (ObservationKind.FACT, ObservationKind.RELATIONSHIP):
+        unsafe = next(candidate for candidate in state.candidates if candidate.kind == kind)
+        with pytest.raises(InvalidReferenceError, match="does not target a grounding prompt"):
+            service.resolve_revision(
+                "ses_synthetic",
+                "rev_all_shapes",
+                [
+                    CandidateDecision(
+                        candidate_id=unsafe.candidate_id,
+                        action="correct",
+                        supplied_value={"visible_description": "不能成為 canonical state"},
+                    )
+                ],
+                f"ans_invalid_{kind.value}",
+                0,
+                f"resolve-invalid-{kind.value}",
+            )
     assert service.get_world("ses_synthetic").version == 0
 
-    supplied: dict[ObservationKind, dict[str, JsonValue]] = {
-        ObservationKind.CHARACTER: {"name": "Alex"},
-        ObservationKind.FACT: {
-            "subject_ref": "obj_a_obj",
-            "predicate": "expression",
-            "value": "curved mouth",
-        },
-        ObservationKind.RELATIONSHIP: {
-            "from_ref": "obj_a_obj",
-            "to_ref": "obj_b_count",
-            "kind": "beside",
-        },
-    }
     decisions = []
     for candidate in state.candidates:
         if candidate.kind in {ObservationKind.OBJECT, ObservationKind.OBJECT_COUNT}:
             decisions.append(
                 CandidateDecision(candidate_id=candidate.candidate_id, action="confirm")
             )
-        else:
+        elif candidate.kind == ObservationKind.CHARACTER:
             decisions.append(
                 CandidateDecision(
                     candidate_id=candidate.candidate_id,
                     action="correct",
-                    supplied_value=supplied[candidate.kind],
+                    supplied_value={"visible_description": "小畫家"},
                 )
             )
     resolved = service.resolve_revision(
@@ -266,8 +265,83 @@ def test_every_observer_shape_has_a_safe_grounding_action(service: WorldStateSer
     assert resolved.revision.status == "resolved"
     assert len(resolved.world.objects) == 2
     assert len(resolved.world.characters) == 1
-    assert len(resolved.world.facts) == 1
-    assert len(resolved.world.relationships) == 1
+    assert resolved.world.characters[0].name == "小畫家"
+    assert resolved.world.characters[0].provenance.source.value == "child_supplied"
+    assert resolved.world.facts == []
+    assert resolved.world.relationships == []
+
+
+def test_confirmed_character_is_canonical_and_not_reasked(service: WorldStateService) -> None:
+    first = ObserverPayload.model_validate(
+        {
+            "items": [
+                {
+                    "observation_id": "obs_figure",
+                    "kind": "character",
+                    "candidate": {
+                        "visible_description": "戴帽子的人",
+                        "visible_gesture": "揮手",
+                    },
+                    "confidence": 0.9,
+                }
+            ]
+        }
+    )
+    proposed = service.submit_revision(
+        "ses_synthetic",
+        "rev_character_1",
+        ObservationBatch(
+            schema_version="observation.v1",
+            batch_id="obsb_character_1",
+            media_id="med_character_1",
+            items=first.to_domain_items(),
+        ),
+        0,
+        "revision-character-1",
+    )
+    assert proposed.prompts[0].allowed_actions == ["confirm", "correct", "reject", "skip"]
+    resolved = service.resolve_revision(
+        "ses_synthetic",
+        "rev_character_1",
+        [CandidateDecision(candidate_id=proposed.prompts[0].candidate_id, action="confirm")],
+        "ans_character_1",
+        0,
+        "resolve-character-1",
+    )
+    character = resolved.world.characters[0]
+    assert character.name == "戴帽子的人"
+    assert character.attributes == {"visible_gesture": "揮手"}
+    assert character.provenance.source.value == "child_confirmed"
+
+    next_observation = ObserverPayload.model_validate(
+        {
+            "items": [
+                {
+                    "observation_id": "obs_figure_again",
+                    "kind": "character",
+                    "candidate": {
+                        "visible_description": "戴帽子的人",
+                        "visible_gesture": "揮手",
+                    },
+                    "confidence": 0.9,
+                }
+            ]
+        }
+    )
+    second = service.submit_revision(
+        "ses_synthetic",
+        "rev_character_2",
+        ObservationBatch(
+            schema_version="observation.v1",
+            batch_id="obsb_character_2",
+            media_id="med_character_2",
+            items=next_observation.to_domain_items(),
+        ),
+        1,
+        "revision-character-2",
+    )
+    assert second.candidates[0].change.value == "unchanged"
+    assert second.prompts == []
 
 
 def test_stale_revision_is_superseded_and_does_not_block_fresh_submission(

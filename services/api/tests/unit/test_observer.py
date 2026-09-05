@@ -31,6 +31,24 @@ def test_fake_provider_returns_strict_proposal() -> None:
     assert result.batch.items[0].source.value == "model_observation"
 
 
+@pytest.mark.parametrize("candidate", [{}, {"visible_description": ""}])
+def test_character_requires_a_visible_description(candidate: dict[str, str]) -> None:
+    raw = VALID | {
+        "items": [
+            {
+                "observation_id": "obs_character",
+                "kind": "character",
+                "candidate": candidate,
+                "confidence": 0.6,
+            }
+        ]
+    }
+    provider = FakeObserverProvider(json.dumps(raw), repair_response=json.dumps(raw))
+    with pytest.raises(ObserverFailure) as caught:
+        ObservationPipeline(provider).run(IMAGE, batch_id="obsb_test")
+    assert caught.value.category == ObserverErrorCategory.INVALID_SCHEMA
+
+
 def test_only_one_repair_is_attempted() -> None:
     provider = FakeObserverProvider("bad", repair_response="also bad")
     with pytest.raises(ObserverFailure) as caught:

@@ -1063,11 +1063,13 @@ class WorldStateService:
         suffix = observation_id.removeprefix("obs_")
         try:
             if kind == "character":
+                description = value["visible_description"]
+                gesture = value.get("visible_gesture")
                 world.characters.append(
                     Character(
                         character_id=canonical_id or f"char_{suffix}",
-                        name=value["name"],
-                        attributes=value.get("attributes", {}),
+                        name=description,
+                        attributes=({"visible_gesture": gesture} if gesture is not None else {}),
                         provenance=provenance,
                     )
                 )
