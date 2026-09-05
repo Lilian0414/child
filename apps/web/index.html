@@ -15,19 +15,22 @@
   </head>
   <body>
     <header class="top-bar">
-      <span class="fixture-badge">AI 即時生成</span>
+      <div class="mode-switch" id="mode-switch"></div>
       <span class="scene-count" id="scene-count" hidden></span>
     </header>
-    <main id="story-body">
-      <p class="eyebrow">一起改變故事</p>
-      <h1>畫一個故事</h1>
-      <p class="summary">先拍下你的畫作，AI 會看看你畫了什麼，一起把它變成一個故事。</p>
-      <div class="actions">
-        <button id="start-button">📷 打開相機拍照</button>
-      </div>
-    </main>
-    <p role="status" id="status-message" hidden></p>
-    <p class="error" role="alert" id="error-message" hidden></p>
+    <div class="layout">
+      <section id="action-panel" class="panel">
+      </section>
+      <section id="text-panel" class="panel">
+        <p class="eyebrow">一起改變故事</p>
+        <h1>畫一個故事</h1>
+        <p class="summary">先拍下你的畫作，AI 會看看你畫了什麼，一起把它變成一個故事。</p>
+      </section>
+    </div>
+    <div class="toast-stack">
+      <p role="status" id="status-message" hidden></p>
+      <p class="error" role="alert" id="error-message" hidden></p>
+    </div>
     <audio id="narration-audio" hidden></audio>
     <video id="camera-video" autoplay playsinline hidden></video>
     <canvas id="camera-canvas" hidden></canvas>

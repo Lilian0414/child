@@ -33,7 +33,7 @@ def test_revision_photo_runs_through_the_offline_demo_observer_by_default(
 def test_revision_photo_runs_through_a_fake_observer_and_submits_a_revision(
     service: WorldStateService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("CHILD_LIVE_MODE", "gemma")
+    monkeypatch.setattr("child_agent_api.main.live_mode", "gemma")
     app.dependency_overrides[get_service] = lambda: service
     client = TestClient(app)
     fake_response = (
@@ -59,7 +59,7 @@ def test_revision_photo_runs_through_a_fake_observer_and_submits_a_revision(
 def test_revision_photo_maps_observer_config_error_to_bad_gateway(
     service: WorldStateService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("CHILD_LIVE_MODE", "gemma")
+    monkeypatch.setattr("child_agent_api.main.live_mode", "gemma")
     app.dependency_overrides[get_service] = lambda: service
     client = TestClient(app)
     with patch(

@@ -1,6 +1,8 @@
 const apiBaseUrl = window.location.port === '8000' ? '' : 'http://localhost:8000'
 
-const storyBody = document.getElementById('story-body')
+const actionPanel = document.getElementById('action-panel')
+const textPanel = document.getElementById('text-panel')
+const modeSwitch = document.getElementById('mode-switch')
 const sceneCount = document.getElementById('scene-count')
 const statusMessage = document.getElementById('status-message')
 const errorMessage = document.getElementById('error-message')
@@ -9,6 +11,8 @@ const cameraVideo = document.getElementById('camera-video')
 const cameraCanvas = document.getElementById('camera-canvas')
 
 let loading = false
+let liveMode = 'demo'
+let modeSwitching = false
 
 // 'intro' -> 'camera' -> 'grounding' (confirm what AI saw in the drawing)
 // -> 'story' (accept/correct/redirect each proposed segment) -> 'full-story'
@@ -43,6 +47,49 @@ function setError(message) {
   } else {
     errorMessage.hidden = true
   }
+}
+
+// ---- Live-mode switch (demo / gemma / minimax), independent of the panels ----
+
+const MODE_LABELS = { demo: '🧪 Demo', gemma: '✨ Gemma', minimax: '🌀 MiniMax' }
+
+function renderModeSwitch() {
+  modeSwitch.replaceChildren()
+  for (const mode of ['demo', 'gemma', 'minimax']) {
+    const el = button(MODE_LABELS[mode], () => void setLiveMode(mode), {
+      disabled: modeSwitching || mode === liveMode,
+    })
+    if (mode === liveMode) el.classList.add('active')
+    modeSwitch.append(el)
+  }
+}
+
+async function setLiveMode(mode) {
+  modeSwitching = true
+  renderModeSwitch()
+  try {
+    const result = await api('/v1/config/live-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ live_mode: mode }),
+    })
+    liveMode = result.live_mode
+  } catch {
+    setError('切換模式失敗，請再試一次。')
+  } finally {
+    modeSwitching = false
+    renderModeSwitch()
+  }
+}
+
+async function loadLiveMode() {
+  try {
+    const result = await api('/v1/config/live-mode')
+    liveMode = result.live_mode
+  } catch {
+    // keep the 'demo' default if this fails — never block the app on it
+  }
+  renderModeSwitch()
 }
 
 async function api(path, init) {
@@ -348,7 +395,7 @@ function heading(eyebrowText, titleText) {
   eyebrow.textContent = eyebrowText
   const h1 = document.createElement('h1')
   h1.textContent = titleText
-  storyBody.append(eyebrow, h1)
+  textPanel.append(eyebrow, h1)
 }
 
 function photoStrip() {
@@ -359,7 +406,7 @@ function photoStrip() {
   img.src = photos[photos.length - 1]
   img.alt = '你拍的畫作'
   strip.append(img)
-  storyBody.append(strip)
+  actionPanel.append(strip)
 }
 
 function renderIntro() {
@@ -367,11 +414,11 @@ function renderIntro() {
   const summary = document.createElement('p')
   summary.className = 'summary'
   summary.textContent = '先拍下你的畫作，AI 會看看你畫了什麼，再問問你細節，一起把它變成一個故事。'
-  storyBody.append(summary)
+  textPanel.append(summary)
   const actions = document.createElement('div')
   actions.className = 'actions'
   actions.append(button('📷 打開相機拍照', () => void openCamera(), { disabled: loading }))
-  storyBody.append(actions)
+  actionPanel.append(actions)
 }
 
 function renderCamera() {
@@ -384,7 +431,7 @@ function renderCamera() {
   stage.className = 'camera-stage'
   cameraVideo.hidden = false
   stage.append(cameraVideo)
-  storyBody.append(stage)
+  actionPanel.append(stage)
 
   photoStrip()
 
@@ -400,7 +447,7 @@ function renderCamera() {
   actions.append(
     button('取消', () => { stopCamera(); uiStep = 'intro'; render() }, { className: 'secondary', disabled: loading }),
   )
-  storyBody.append(actions)
+  actionPanel.append(actions)
 }
 
 function renderGrounding() {
@@ -409,7 +456,6 @@ function renderGrounding() {
   if (!prompt || !candidate) return
 
   heading('確認畫作內容', `第 ${promptIndex + 1} 個，共 ${revisionState.prompts.length} 個`)
-  photoStrip()
 
   const changeText = {
     added: '我看到新的：',
@@ -422,7 +468,9 @@ function renderGrounding() {
   const summary = document.createElement('p')
   summary.className = 'summary'
   summary.textContent = `${changeText}${candidateSummary(candidate)}`
-  storyBody.append(summary)
+  textPanel.append(summary)
+
+  photoStrip()
 
   const actions = document.createElement('div')
   actions.className = 'actions'
@@ -441,7 +489,7 @@ function renderGrounding() {
       )
     }
   }
-  storyBody.append(actions)
+  actionPanel.append(actions)
 
   if (showCustomInput) {
     const form = document.createElement('div')
@@ -457,7 +505,7 @@ function renderGrounding() {
       }
     }, { disabled: loading })
     form.append(input, submit)
-    storyBody.append(form)
+    actionPanel.append(form)
   }
 }
 
@@ -469,21 +517,24 @@ function renderStory() {
   sceneCount.textContent = `第 ${segments.length + (proposal ? 1 : 0)} 段`
 
   heading(proposal ? '接下來呢？' : '你的故事', '故事')
-  photoStrip()
 
   for (const segment of segments) {
     const p = document.createElement('p')
     p.className = 'summary'
     p.textContent = segment.text
-    storyBody.append(p)
+    textPanel.append(p)
   }
 
   if (proposal) {
     const proposalText = document.createElement('p')
     proposalText.className = 'summary'
     proposalText.textContent = proposal.text
-    storyBody.append(proposalText)
+    textPanel.append(proposalText)
+  }
 
+  photoStrip()
+
+  if (proposal) {
     const actions = document.createElement('div')
     actions.className = 'actions'
     actions.append(button('🔊 唸給我聽', () => void listen(proposal.text), { className: 'listen' }))
@@ -500,7 +551,7 @@ function renderStory() {
         disabled: loading,
       }),
     )
-    storyBody.append(actions)
+    actionPanel.append(actions)
 
     if (storyAction) {
       const form = document.createElement('div')
@@ -514,7 +565,7 @@ function renderStory() {
         if (customAnswer.trim()) void groundStoryProposal(storyAction, customAnswer.trim())
       }, { disabled: loading })
       form.append(input, submit)
-      storyBody.append(form)
+      actionPanel.append(form)
     }
   } else if (!loading) {
     // No pending proposal and nothing in flight — give the child a way forward
@@ -522,7 +573,7 @@ function renderStory() {
     const retry = document.createElement('div')
     retry.className = 'actions'
     retry.append(button('繼續故事', () => void requestStoryProposal()))
-    storyBody.append(retry)
+    actionPanel.append(retry)
   }
 
   const moreActions = document.createElement('div')
@@ -535,26 +586,28 @@ function renderStory() {
       button('📖 讀完整故事', () => void showFullStory(), { className: 'secondary', disabled: loading }),
     )
   }
-  storyBody.append(moreActions)
+  actionPanel.append(moreActions)
 }
 
 function renderFullStory() {
   heading('故事完成了', '完整故事')
-  photoStrip()
   const p = document.createElement('p')
   p.className = 'summary'
   p.textContent = storyState.fullText
-  storyBody.append(p)
+  textPanel.append(p)
+
+  photoStrip()
 
   const actions = document.createElement('div')
   actions.className = 'actions'
   actions.append(button('🔊 唸給我聽', () => void listen(storyState.fullText), { className: 'listen' }))
   actions.append(button('再畫一個新故事', resetAll, { className: 'secondary' }))
-  storyBody.append(actions)
+  actionPanel.append(actions)
 }
 
 function render() {
-  storyBody.replaceChildren()
+  actionPanel.replaceChildren()
+  textPanel.replaceChildren()
   sceneCount.hidden = true
   statusMessage.hidden = true
   if (uiStep !== 'camera') cameraVideo.hidden = true
@@ -578,3 +631,4 @@ function render() {
 }
 
 render()
+void loadLiveMode()
