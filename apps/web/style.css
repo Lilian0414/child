@@ -358,22 +358,30 @@ button.listen:active { box-shadow: 0 1px 0 #dc8521, 0 4px 8px rgba(150, 83, 6, .
 
 .photo-strip {
   display: flex;
+  justify-content: center;
+  align-items: center;
+  align-self: center;
+  width: fit-content;
+  max-width: 100%;
   gap: .7rem;
   margin: 0;
   overflow-x: auto;
-  padding: .6rem;
+  padding: 1rem;
   background: rgba(255,255,255,.78);
-  border-radius: 1.2rem;
+  border: 3px solid rgba(255, 255, 255, .88);
+  border-radius: 1.5rem;
   box-shadow: 0 1px 0 rgba(255,255,255,.9) inset, 0 2px 8px rgba(10,60,110,.15);
   backdrop-filter: blur(6px);
 }
 .photo-strip img {
-  width: 5.5rem;
-  height: 5.5rem;
-  object-fit: cover;
-  border-radius: 1rem;
-  border: 2px solid #fff;
-  box-shadow: 0 2px 6px rgba(10,60,110,.25);
+  width: auto;
+  height: auto;
+  max-width: min(100%, 22rem);
+  max-height: 42vh;
+  object-fit: contain;
+  border-radius: 1.2rem;
+  border: 3px solid #fff;
+  box-shadow: 0 5px 14px rgba(10,60,110,.24);
   flex: none;
 }
 
