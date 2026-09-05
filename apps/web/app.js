@@ -401,10 +401,10 @@ function heading(eyebrowText, titleText) {
   textPanel.append(eyebrow, h1)
 }
 
-function photoStrip() {
+function photoStrip(size = 'large') {
   if (photos.length === 0) return
   const strip = document.createElement('div')
-  strip.className = 'photo-strip'
+  strip.className = `photo-strip photo-strip--${size}`
   const img = document.createElement('img')
   img.src = photos[photos.length - 1]
   img.alt = '你拍的畫作'
@@ -436,7 +436,7 @@ function renderCamera() {
   stage.append(cameraVideo)
   actionPanel.append(stage)
 
-  photoStrip()
+  photoStrip('compact')
 
   const actions = document.createElement('div')
   actions.className = 'actions'
