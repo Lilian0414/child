@@ -187,6 +187,10 @@ body::before {
   justify-content: center;
 }
 
+#text-panel.full-story-panel {
+  justify-content: flex-start;
+}
+
 @media (max-width: 46rem) {
   html, body {
     height: auto;

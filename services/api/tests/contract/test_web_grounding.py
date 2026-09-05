@@ -12,3 +12,15 @@ def test_browser_renders_all_core_allowed_grounding_actions() -> None:
     for action in ("confirm", "correct", "reject"):
         assert f"{action}:" in app
     assert "case 'character':\n      return { visible_description: text }" in app
+
+
+def test_full_story_panel_starts_at_top_and_remains_scrollable() -> None:
+    web_dir = Path(__file__).parents[4] / "apps" / "web"
+    app = (web_dir / "app.js").read_text()
+    styles = (web_dir / "style.css").read_text()
+
+    assert "textPanel.classList.toggle('full-story-panel', uiStep === 'full-story')" in app
+    assert "textPanel.scrollTop = 0" in app
+    assert "#text-panel.full-story-panel" in styles
+    assert "justify-content: flex-start" in styles
+    assert "overflow-y: auto" in styles
