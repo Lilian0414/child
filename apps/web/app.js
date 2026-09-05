@@ -1,4 +1,4 @@
-const apiBaseUrl = window.location.port === '8000' ? '' : 'http://localhost:8000'
+const apiBaseUrl = ''
 
 const actionPanel = document.getElementById('action-panel')
 const textPanel = document.getElementById('text-panel')
