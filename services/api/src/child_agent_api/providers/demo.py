@@ -35,6 +35,12 @@ _DEMO_OBSERVATION_RESPONSE = """{
       "kind": "fact",
       "candidate": {"visible_expression": "笑臉"},
       "confidence": 0.85
+    },
+    {
+      "observation_id": "obs_hero",
+      "kind": "character",
+      "candidate": {"visible_description": "一個戴著帽子、笑咪咪的角色", "visible_gesture": "揮手"},
+      "confidence": 0.9
     }
   ]
 }"""
@@ -55,14 +61,14 @@ def _world_summary(world: WorldState) -> list[str]:
 
 
 _OPENERS = [
-    "故事開始的時候，{items}靜靜地待在畫裡。",
-    "在一個陽光溫暖的地方，{items}剛好都聚在一起。",
+    "{items}出現了。你猜接下來會發生什麼事？",
+    "{items}靜靜地待在畫裡。",
 ]
 _CONTINUATIONS = [
-    "接著，{items}一起發現了一個新的角落。",
-    "過了一會兒，{items}決定往前走走看。",
-    "這時候，{items}好奇地抬起頭，看看還會發生什麼事。",
-    "{items}停下來，想了想接下來要做什麼。",
+    "接著，{items}發現了新的角落。",
+    "{items}決定往前走走看。要不要跟過去？",
+    "{items}好奇地抬起頭。牠看到了什麼呢？",
+    "{items}停下來，想了想。",
 ]
 
 
@@ -72,14 +78,18 @@ class TemplateStoryProvider:
     offline and deterministic in structure, but varies enough across calls
     to not feel robotic in a short demo."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, child_idea: str | None = None) -> None:
         self._continuation_cycle = itertools.cycle(_CONTINUATIONS)
+        self._child_idea = child_idea
 
     def propose(self, world: WorldState, story: StoryState) -> StoryProviderResult:
         names = _world_summary(world)
         items = "、".join(names) if names else "這個故事的主角們"
-        template = _OPENERS[0] if not story.segments else next(self._continuation_cycle)
-        text = template.format(items=items)
+        if self._child_idea:
+            text = f"你說接下來「{self._child_idea}」——於是{items}真的這麼做了！"
+        else:
+            template = _OPENERS[0] if not story.segments else next(self._continuation_cycle)
+            text = template.format(items=items)
 
         dependencies: list[str] = []
         for character in world.characters:

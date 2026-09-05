@@ -80,12 +80,12 @@ def current_observer_provider() -> ObserverProvider:
     return demo_observer()
 
 
-def current_story_provider() -> StoryProvider:
+def current_story_provider(child_idea: str | None = None) -> StoryProvider:
     if live_mode == "gemma":
-        return GemmaStoryProvider()
+        return GemmaStoryProvider(child_idea=child_idea)
     if live_mode == "minimax":
-        return MiniMaxStoryProvider()
-    return TemplateStoryProvider()
+        return MiniMaxStoryProvider(child_idea=child_idea)
+    return TemplateStoryProvider(child_idea=child_idea)
 
 
 def cors_origins_from_env() -> list[str]:
@@ -148,6 +148,7 @@ class ResolveRevisionRequest(MutationRequest):
 
 class StoryProposalRequest(ApiModel):
     expected_state_version: Annotated[int, Field(ge=0)]
+    child_idea: Annotated[str | None, Field(min_length=1, max_length=300)] = None
 
 
 class GroundStoryRequest(MutationRequest):
@@ -288,7 +289,7 @@ def restore_story(session_id: str, service: Service) -> StoryState:
 @app.post("/v1/sessions/{session_id}/story/proposals")
 def propose_story(session_id: str, body: StoryProposalRequest, service: Service) -> Response:
     try:
-        provider = current_story_provider()
+        provider = current_story_provider(body.child_idea)
     except ProviderConfigError as error:
         return JSONResponse(
             status_code=502,
@@ -467,13 +468,20 @@ if web_dir.is_dir():
 
     class NoCacheStaticFiles(StaticFiles):
         """Dev/demo app iterates on the frontend constantly — never let the
-        browser silently serve a stale cached copy of index.html/app.js/style.css."""
+        browser silently serve a stale cached copy of index.html/app.js/style.css.
+        Large static binaries (fonts) that never change mid-demo are the
+        exception — no-store would re-download several MB on every reload."""
+
+        _CACHEABLE_SUFFIXES = (".ttf", ".woff", ".woff2", ".otf")
 
         async def get_response(
             self, path: str, scope: MutableMapping[str, object]
         ) -> Response:
             response = await super().get_response(path, scope)
-            response.headers["Cache-Control"] = "no-store"
+            if path.endswith(self._CACHEABLE_SUFFIXES):
+                response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+            else:
+                response.headers["Cache-Control"] = "no-store"
             return response
 
     app.mount("/", NoCacheStaticFiles(directory=web_dir, html=True), name="web")

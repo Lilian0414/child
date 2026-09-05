@@ -31,6 +31,7 @@ let customAnswer = ''
 
 let storyState = null // latest StoryState from the API
 let storyAction = null // 'correct' | 'redirect' while its free-text box is open
+let childIdeaInput = '' // the child's plot idea, typed before each AI-written segment
 
 function newKey(prefix) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`
@@ -178,8 +179,9 @@ async function submitPhotoAsRevision() {
     showCustomInput = false
     customAnswer = ''
     if (revisionState.prompts.length === 0) {
-      // Nothing needed grounding this round — move straight on to the story.
-      await requestStoryProposal()
+      // Nothing needed grounding this round — go straight to asking what
+      // the child wants to happen next.
+      uiStep = 'story-idea'
     } else {
       uiStep = 'grounding'
     }
@@ -270,7 +272,9 @@ async function resolveRevision() {
       },
     )
     sessionVersion = resolved.world.version
-    await requestStoryProposal()
+    uiStep = 'story-idea'
+    setLoading(false)
+    render()
   } catch (error) {
     console.error('resolveRevision failed', error, { decisions, revisionState })
     setError(`確認畫作的時候出了點問題：${error.message || error}`)
@@ -279,9 +283,20 @@ async function resolveRevision() {
   }
 }
 
-// ---- Story: AI proposes a segment, child accepts / corrects / redirects ----
+// ---- Story: child writes what should happen next, AI writes it as a short
+// segment, child confirms it matches (accept) or asks for a change (correct /
+// redirect) before the next round starts. ----
 
-async function requestStoryProposal() {
+function submitStoryIdea() {
+  const idea = childIdeaInput.trim()
+  void requestStoryProposal(idea || null)
+}
+
+function skipStoryIdea() {
+  void requestStoryProposal(null)
+}
+
+async function requestStoryProposal(childIdea) {
   setLoading(true)
   setError(null)
   render()
@@ -289,9 +304,10 @@ async function requestStoryProposal() {
     storyState = await api(`/v1/sessions/${sessionId}/story/proposals`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expected_state_version: sessionVersion }),
+      body: JSON.stringify({ expected_state_version: sessionVersion, child_idea: childIdea ?? null }),
     })
     storyAction = null
+    childIdeaInput = ''
     uiStep = 'story'
   } catch {
     setError('AI 想故事的時候出了點問題，請再試一次。')
@@ -326,7 +342,11 @@ async function groundStoryProposal(action, suppliedText) {
     render()
     return
   }
-  await requestStoryProposal()
+  // Accepted (or corrected/redirected) into a canonical segment — go back to
+  // asking the child what should happen next, rather than letting AI free-run.
+  uiStep = 'story-idea'
+  setLoading(false)
+  render()
 }
 
 async function showFullStory() {
@@ -374,6 +394,7 @@ function resetAll() {
   storyAction = null
   showCustomInput = false
   customAnswer = ''
+  childIdeaInput = ''
   uiStep = 'intro'
   render()
 }
@@ -450,10 +471,61 @@ function renderCamera() {
   actionPanel.append(actions)
 }
 
+function renderCharacterNaming(prompt, candidate) {
+  const description = candidate.proposed_value?.visible_description || candidateSummary(candidate)
+
+  heading('幫他取個名字！', `第 ${promptIndex + 1} 個，共 ${revisionState.prompts.length} 個`)
+
+  const summary = document.createElement('p')
+  summary.className = 'summary'
+  summary.textContent = `AI 看到一個角色：${description}`
+  textPanel.append(summary)
+
+  photoStrip()
+
+  const form = document.createElement('div')
+  form.className = 'custom-answer'
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.placeholder = '幫他取個名字…'
+  input.value = customAnswer
+  input.addEventListener('input', (event) => { customAnswer = event.target.value })
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && customAnswer.trim()) {
+      decideCurrentPrompt('correct', { visible_description: customAnswer.trim() })
+    }
+  })
+  const submit = button('取好了', () => {
+    if (customAnswer.trim()) {
+      decideCurrentPrompt('correct', { visible_description: customAnswer.trim() })
+    }
+  }, { disabled: loading })
+  form.append(input, submit)
+  actionPanel.append(form)
+
+  const actions = document.createElement('div')
+  actions.className = 'actions'
+  if (prompt.allowed_actions.includes('reject')) {
+    actions.append(button('這裡沒有角色', () => decideCurrentPrompt('reject'), {
+      className: 'secondary',
+      disabled: loading,
+    }))
+  }
+  actions.append(
+    button('先跳過', () => decideCurrentPrompt('skip'), { className: 'secondary', disabled: loading }),
+  )
+  actionPanel.append(actions)
+}
+
 function renderGrounding() {
   const prompt = currentPrompt()
   const candidate = currentCandidate()
   if (!prompt || !candidate) return
+
+  if (candidate.kind === 'character') {
+    renderCharacterNaming(prompt, candidate)
+    return
+  }
 
   heading('確認畫作內容', `第 ${promptIndex + 1} 個，共 ${revisionState.prompts.length} 個`)
 
@@ -509,6 +581,52 @@ function renderGrounding() {
   }
 }
 
+function renderStoryIdea() {
+  const segments = storyState ? storyState.segments.filter((segment) => segment.status === 'current') : []
+
+  heading('接下來呢？', segments.length === 0 ? '故事要開始了' : '你想怎麼發展？')
+
+  for (const segment of segments) {
+    const p = document.createElement('p')
+    p.className = 'summary'
+    p.textContent = segment.text
+    textPanel.append(p)
+  }
+
+  const prompt = document.createElement('p')
+  prompt.className = 'summary'
+  prompt.textContent = '跟我說說接下來想發生什麼事，我會把它寫成故事給你看！'
+  textPanel.append(prompt)
+
+  photoStrip()
+
+  const form = document.createElement('div')
+  form.className = 'custom-answer'
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.placeholder = '例如：小兔子決定去森林裡探險…'
+  input.value = childIdeaInput
+  input.addEventListener('input', (event) => { childIdeaInput = event.target.value })
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && childIdeaInput.trim()) submitStoryIdea()
+  })
+  const submit = button('讓 AI 寫成故事', submitStoryIdea, { disabled: loading })
+  form.append(input, submit)
+  actionPanel.append(form)
+
+  const actions = document.createElement('div')
+  actions.className = 'actions'
+  actions.append(
+    button('讓 AI 自由發揮', skipStoryIdea, { className: 'secondary', disabled: loading }),
+  )
+  if (segments.length > 0) {
+    actions.append(
+      button('讀完整故事', () => void showFullStory(), { className: 'secondary', disabled: loading }),
+    )
+  }
+  actionPanel.append(actions)
+}
+
 function renderStory() {
   const segments = storyState.segments.filter((segment) => segment.status === 'current')
   const proposal = storyState.current_proposal
@@ -516,7 +634,7 @@ function renderStory() {
   sceneCount.hidden = false
   sceneCount.textContent = `第 ${segments.length + (proposal ? 1 : 0)} 段`
 
-  heading(proposal ? '接下來呢？' : '你的故事', '故事')
+  heading(proposal ? '是這樣嗎？' : '你的故事', '故事')
 
   for (const segment of segments) {
     const p = document.createElement('p')
@@ -538,15 +656,15 @@ function renderStory() {
     const actions = document.createElement('div')
     actions.className = 'actions'
     actions.append(button('唸給我聽', () => void listen(proposal.text), { className: 'listen' }))
-    actions.append(button('接受這一段', () => void groundStoryProposal('accept'), { disabled: loading }))
+    actions.append(button('對，就是這樣', () => void groundStoryProposal('accept'), { disabled: loading }))
     actions.append(
-      button('我要改寫…', () => { storyAction = 'correct'; render() }, {
+      button('不是，我要改寫…', () => { storyAction = 'correct'; render() }, {
         className: 'secondary',
         disabled: loading,
       }),
     )
     actions.append(
-      button('換個方向…', () => { storyAction = 'redirect'; render() }, {
+      button('不是，換個方向…', () => { storyAction = 'redirect'; render() }, {
         className: 'secondary',
         disabled: loading,
       }),
@@ -618,6 +736,8 @@ function render() {
     renderCamera()
   } else if (uiStep === 'grounding' && revisionState) {
     renderGrounding()
+  } else if (uiStep === 'story-idea') {
+    renderStoryIdea()
   } else if (uiStep === 'story' && storyState) {
     renderStory()
   } else if (uiStep === 'full-story' && storyState) {

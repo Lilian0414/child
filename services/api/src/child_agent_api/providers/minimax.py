@@ -58,11 +58,20 @@ class MiniMaxStoryProvider:
     """`StoryProvider`-compatible adapter: proposes the next short story
     segment from canonical world/story state via MiniMax text generation."""
 
-    def __init__(self, *, timeout_seconds: float = 20) -> None:
+    def __init__(self, *, timeout_seconds: float = 20, child_idea: str | None = None) -> None:
         self._client = OpenAI(base_url=GMI_BASE_URL, api_key=_api_key())
         self._timeout_seconds = timeout_seconds
+        self._child_idea = child_idea
 
     def propose(self, world: WorldState, story: StoryState) -> StoryProviderResult:
+        if self._child_idea:
+            instruction = (
+                f"孩子說接下來想發生的事是：「{self._child_idea}」。"
+                "請忠實地把孩子這個想法寫成故事的下一小段，"
+                "不要換成別的情節，只是用故事的方式把它說出來。"
+            )
+        else:
+            instruction = "請寫下一小段故事。"
         response = self._client.chat.completions.create(
             model=MODEL,
             timeout=self._timeout_seconds,
@@ -70,12 +79,19 @@ class MiniMaxStoryProvider:
                 {
                     "role": "system",
                     "content": (
-                        "你是兒童故事作家，正在跟孩子共同創作一段持續進行的故事。"
+                        "你是兒童故事作家，正在跟一個國小低、中年級的孩子玩接龍故事遊戲。"
                         "只根據下面提供的「已確認世界」與「已確認故事」內容繼續寫，"
                         "不要引入未被確認的新角色或物件。"
-                        "只寫接下來一小段（不超過 150 字），不要重複前面的內容，"
-                        "不要下判斷（不寫「答對了」或「這樣不對」），"
-                        "只用溫暖、順著孩子觀點的敘述語氣。只回傳故事文字本身，不要其他說明。"
+                        "不要下判斷（不寫「答對了」或「這樣不對」）。"
+                        "語氣要像跟國小生說話：句子要短、用小朋友平常會用的簡單詞彙，"
+                        "不要用成語或書面語（例如不要寫「絡繹不絕」「頓時」「不禁」這種詞），"
+                        "可以自然地用一點狀聲詞（例如「咻」「碰」「嘻嘻」），語氣活潑、溫暖、"
+                        "順著孩子的觀點敘述。"
+                        "長度限制很重要：整段最多兩個句號、不超過 50 個字，"
+                        "像接龍故事一樣一次只推進一點點，不要一次講完整個發展。"
+                        "在適合的句號處，可以自然地用一個簡短問句跟孩子互動"
+                        "（例如問他接下來想怎麼做、或問他的感覺），但不是每次都要問。"
+                        "只回傳故事文字本身，不要其他說明。"
                     ),
                 },
                 {
@@ -83,7 +99,7 @@ class MiniMaxStoryProvider:
                     "content": (
                         f"已確認世界：\n{_world_summary(world)}\n\n"
                         f"已確認故事：\n{_story_so_far(story)}\n\n"
-                        "請寫下一小段故事。"
+                        f"{instruction}"
                     ),
                 },
             ],
@@ -91,7 +107,7 @@ class MiniMaxStoryProvider:
         text = (response.choices[0].message.content or "").strip()
         if not text:
             text = "故事在這裡靜靜地停了一下，等著你告訴我接下來會發生什麼。"
-        text = text[:500]
+        text = text[:120]  # safety cap; prompt asks for <=50 chars, 2 periods
 
         dependencies: list[str] = []
         for character in world.characters:
