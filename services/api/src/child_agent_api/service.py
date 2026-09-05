@@ -384,6 +384,7 @@ class WorldStateService:
                 based_on_state_version=expected_state_version,
                 segment_index=story.next_segment_index,
                 text=provider_result.text,
+                question=provider_result.question,
                 world_dependencies=provider_result.world_dependencies,
             )
             active = (
@@ -403,6 +404,51 @@ class WorldStateService:
                     proposal=proposal.model_dump(mode="json"),
                 )
             )
+            snapshot.state = story.model_dump(mode="json")
+            return story
+
+    def regenerate_story_proposal(
+        self,
+        session_id: str,
+        proposal_id: str,
+        expected_state_version: int,
+        provider: StoryProvider,
+    ) -> StoryState:
+        """Re-draft the still-pending proposal's text in place (same proposal_id,
+        same segment slot) — for when the child asks for a different take before
+        ever accepting one. Never touches canonical world/session state."""
+        with DbSession(self.engine) as db, db.begin():
+            session = db.get(SessionRow, session_id)
+            snapshot = db.get(StorySnapshotRow, session_id)
+            world_row = db.get(WorldSnapshotRow, session_id)
+            proposal_row = db.get(StoryProposalRow, proposal_id)
+            if session is None or snapshot is None or world_row is None:
+                raise NotFoundError("session does not exist")
+            if session.state_version != expected_state_version:
+                raise VersionConflictError(expected_state_version, session.state_version)
+            story = StoryState.model_validate(snapshot.state, strict=False)
+            current = story.current_proposal
+            if current is None or current.proposal_id != proposal_id or proposal_row is None:
+                raise InvalidReferenceError("proposal is not current")
+            provider_result = StoryProviderResult.model_validate(
+                provider.propose(WorldState.model_validate(world_row.state, strict=False), story)
+            )
+            active = (
+                {x.character_id for x in self.get_world(session_id).characters}
+                | {x.object_id for x in self.get_world(session_id).objects}
+                | {x.fact_id for x in self.get_world(session_id).facts}
+            )
+            if not set(provider_result.world_dependencies) <= active:
+                raise InvalidReferenceError("provider returned invalid world dependencies")
+            redrafted = current.model_copy(
+                update={
+                    "text": provider_result.text,
+                    "question": provider_result.question,
+                    "world_dependencies": provider_result.world_dependencies,
+                }
+            )
+            story.current_proposal = redrafted
+            proposal_row.proposal = redrafted.model_dump(mode="json")
             snapshot.state = story.model_dump(mode="json")
             return story
 

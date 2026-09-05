@@ -73,33 +73,6 @@ body::after { width: 16rem; height: 16rem; bottom: -4rem; right: 6%; opacity: .6
   text-shadow: 0 1px 0 rgba(255,255,255,.5);
 }
 
-.mode-switch {
-  display: flex;
-  gap: .35rem;
-  padding: .3rem;
-  border-radius: 999px;
-  background: rgba(255,255,255,.5);
-  box-shadow: 0 1px 0 rgba(255,255,255,.9) inset, 0 2px 8px rgba(10,60,110,.15);
-}
-.mode-switch button {
-  min-height: 2.2rem;
-  padding: 0 .9rem;
-  font-size: .78rem;
-  font-weight: 800;
-  color: #0b4f7a;
-  background: transparent;
-  box-shadow: none;
-  text-shadow: none;
-}
-.mode-switch button::before { display: none; }
-.mode-switch button:hover { background: rgba(255,255,255,.6); filter: none; }
-.mode-switch button.active {
-  color: #6b4400;
-  background: linear-gradient(180deg, #fffef2 0%, #ffe9a8 50%, #ffd35c 51%, #f7b731 100%);
-  box-shadow: 0 1px 0 rgba(255,255,255,.9) inset, 0 2px 6px rgba(160,110,10,.3);
-  text-shadow: 0 1px 0 rgba(255,255,255,.5);
-}
-.mode-switch button:disabled { cursor: wait; opacity: .6; }
 .scene-count {
   color: #0b4f7a;
   font-weight: 800;
