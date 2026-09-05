@@ -51,7 +51,7 @@ function setError(message) {
 
 // ---- Live-mode switch (demo / gemma / minimax), independent of the panels ----
 
-const MODE_LABELS = { demo: '🧪 Demo', gemma: '✨ Gemma', minimax: '🌀 MiniMax' }
+const MODE_LABELS = { demo: 'Demo', gemma: 'Gemma', minimax: 'MiniMax' }
 
 function renderModeSwitch() {
   modeSwitch.replaceChildren()
@@ -410,14 +410,14 @@ function photoStrip() {
 }
 
 function renderIntro() {
-  heading('一起改變故事', '畫一個故事')
+  heading('一起改變故事！', '畫一個故事')
   const summary = document.createElement('p')
   summary.className = 'summary'
-  summary.textContent = '先拍下你的畫作，AI 會看看你畫了什麼，再問問你細節，一起把它變成一個故事。'
+  summary.textContent = '先拍下你的畫作，AI 會看看你畫了什麼，然後我們一起把它變成一個故事！'
   textPanel.append(summary)
   const actions = document.createElement('div')
   actions.className = 'actions'
-  actions.append(button('📷 打開相機拍照', () => void openCamera(), { disabled: loading }))
+  actions.append(button('打開相機拍照', () => void openCamera(), { disabled: loading }))
   actionPanel.append(actions)
 }
 
@@ -437,11 +437,11 @@ function renderCamera() {
 
   const actions = document.createElement('div')
   actions.className = 'actions'
-  actions.append(button('📸 拍照', capturePhoto, { disabled: !cameraStream || loading }))
+  actions.append(button('拍照', capturePhoto, { disabled: !cameraStream || loading }))
   if (photos.length > 0) {
-    actions.append(button('↩️ 重拍', retakeLastPhoto, { disabled: loading }))
+    actions.append(button('重拍', retakeLastPhoto, { disabled: loading }))
     actions.append(
-      button('✅ 讓 AI 看看這張畫', () => void submitPhotoAsRevision(), { disabled: loading }),
+      button('讓 AI 看看這張畫', () => void submitPhotoAsRevision(), { disabled: loading }),
     )
   }
   actions.append(
@@ -537,7 +537,7 @@ function renderStory() {
   if (proposal) {
     const actions = document.createElement('div')
     actions.className = 'actions'
-    actions.append(button('🔊 唸給我聽', () => void listen(proposal.text), { className: 'listen' }))
+    actions.append(button('唸給我聽', () => void listen(proposal.text), { className: 'listen' }))
     actions.append(button('接受這一段', () => void groundStoryProposal('accept'), { disabled: loading }))
     actions.append(
       button('我要改寫…', () => { storyAction = 'correct'; render() }, {
@@ -579,11 +579,11 @@ function renderStory() {
   const moreActions = document.createElement('div')
   moreActions.className = 'actions'
   moreActions.append(
-    button('🖍️ 再畫一點，補充故事', () => void openCamera(), { className: 'secondary', disabled: loading }),
+    button('再畫一點，補充故事', () => void openCamera(), { className: 'secondary', disabled: loading }),
   )
   if (segments.length > 0) {
     moreActions.append(
-      button('📖 讀完整故事', () => void showFullStory(), { className: 'secondary', disabled: loading }),
+      button('讀完整故事', () => void showFullStory(), { className: 'secondary', disabled: loading }),
     )
   }
   actionPanel.append(moreActions)
@@ -600,7 +600,7 @@ function renderFullStory() {
 
   const actions = document.createElement('div')
   actions.className = 'actions'
-  actions.append(button('🔊 唸給我聽', () => void listen(storyState.fullText), { className: 'listen' }))
+  actions.append(button('唸給我聽', () => void listen(storyState.fullText), { className: 'listen' }))
   actions.append(button('再畫一個新故事', resetAll, { className: 'secondary' }))
   actionPanel.append(actions)
 }
