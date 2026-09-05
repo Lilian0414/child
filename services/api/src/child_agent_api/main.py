@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -28,15 +28,58 @@ from child_agent_api.domain.models import (
     StoryState,
 )
 from child_agent_api.fixture_flow import FlowView, build_view, observation_batch, observation_id
-from child_agent_api.observer import ObserverItem, ObserverPayload
+from child_agent_api.observer import (
+    ImageInput,
+    ObservationPipeline,
+    ObserverFailure,
+    ObserverItem,
+    ObserverPayload,
+    ObserverProvider,
+)
 from child_agent_api.persistence.database import create_database_engine
+from child_agent_api.providers.demo import TemplateStoryProvider, demo_observer
+from child_agent_api.providers.gemma_story import (
+    GemmaConfigError,
+    GemmaStoryProvider,
+    gemma_observer,
+)
+from child_agent_api.providers.minimax import (
+    MiniMaxConfigError,
+    MiniMaxStoryProvider,
+    minimax_observer,
+)
 from child_agent_api.providers.tts_elevenlabs import TTSError, synthesize_speech
 from child_agent_api.service import WorldStateService
+from child_agent_api.story import StoryProvider
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 load_dotenv(REPO_ROOT / ".env")
 
 DEFAULT_CORS_ORIGINS = ""
+
+# CHILD_LIVE_MODE selects which live model backs the ObserverProvider/StoryProvider
+# boundaries: "gemma" or "minimax" call out to a real model; anything else (unset,
+# by default) uses fully offline, network-free demo providers. Same API surface
+# either way — only this wiring changes, the frontend and Core never know.
+ProviderConfigError = (GemmaConfigError, MiniMaxConfigError)
+
+
+def current_observer_provider() -> ObserverProvider:
+    mode = os.getenv("CHILD_LIVE_MODE")
+    if mode == "gemma":
+        return gemma_observer()
+    if mode == "minimax":
+        return minimax_observer()
+    return demo_observer()
+
+
+def current_story_provider() -> StoryProvider:
+    mode = os.getenv("CHILD_LIVE_MODE")
+    if mode == "gemma":
+        return GemmaStoryProvider()
+    if mode == "minimax":
+        return MiniMaxStoryProvider()
+    return TemplateStoryProvider()
 
 
 def cors_origins_from_env() -> list[str]:
@@ -154,6 +197,7 @@ def domain_error(_request: Request, error: DomainError) -> JSONResponse:
                 code="session_not_found", message="找不到這段故事。"
             ).model_dump(),
         )
+    print(f"[domain_error] {type(error).__name__}: {error}")  # noqa: T201 - dev-time diagnostics
     return JSONResponse(
         status_code=422,
         content=ErrorResponse(
@@ -209,9 +253,27 @@ def restore_story(session_id: str, service: Service) -> StoryState:
     return service.get_story(session_id)
 
 
-@app.post("/v1/sessions/{session_id}/story/proposals", response_model=StoryState)
-def propose_story(session_id: str, body: StoryProposalRequest, service: Service) -> StoryState:
-    return service.request_story_proposal(session_id, body.expected_state_version)
+@app.post("/v1/sessions/{session_id}/story/proposals")
+def propose_story(session_id: str, body: StoryProposalRequest, service: Service) -> Response:
+    try:
+        provider = current_story_provider()
+    except ProviderConfigError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ErrorResponse(code="story_provider_failed", message=str(error)).model_dump(),
+        )
+    try:
+        state = service.request_story_proposal(
+            session_id, body.expected_state_version, provider=provider
+        )
+    except DomainError:
+        raise
+    except Exception as error:  # noqa: BLE001 - live model call, keep the API boundary stable
+        return JSONResponse(
+            status_code=502,
+            content=ErrorResponse(code="story_provider_failed", message=str(error)).model_dump(),
+        )
+    return Response(content=state.model_dump_json(), media_type="application/json")
 
 
 @app.post(
@@ -245,6 +307,54 @@ def submit_revision(
         body.observations.to_domain(),
         body.expected_state_version,
         body.idempotency_key,
+    )
+
+
+@app.post(
+    "/v1/sessions/{session_id}/drawing-revisions/photo",
+    status_code=201,
+)
+async def submit_revision_photo(
+    session_id: str,
+    service: Service,
+    image: UploadFile,
+    expected_state_version: Annotated[int, Form()],
+    idempotency_key: Annotated[str, Form(min_length=8, max_length=100)],
+) -> Response:
+    """Live (non-fixture) drawing-revision entry point: a photo goes through a
+    real Gemma vision model, and the resulting observation batch is submitted
+    through the same Core `submit_revision` boundary the fixture path uses —
+    the photo never becomes canonical truth by itself."""
+    image_bytes = await image.read()
+    revision_id = f"rev_{uuid4().hex}"
+    batch_id = f"obsb_{uuid4().hex}"
+    media_id = f"med_{uuid4().hex}"
+    image_input = ImageInput(
+        media_id=media_id, content=image_bytes, mime_type=image.content_type or "image/jpeg"
+    )
+    try:
+        pipeline = ObservationPipeline(current_observer_provider())
+        result = pipeline.run(image_input, batch_id=batch_id, timeout_seconds=45)
+    except (*ProviderConfigError, ObserverFailure) as error:
+        return JSONResponse(
+            status_code=502,
+            content=ErrorResponse(code="observer_failed", message=str(error)).model_dump(),
+        )
+    # The model reuses short ids like "obs_1" on every call, but `observation_id`
+    # is a globally unique column — scope each id to this batch before it's stored.
+    batch = result.batch.model_copy(
+        update={
+            "items": [
+                item.model_copy(update={"observation_id": f"{batch_id}_{item.observation_id}"})
+                for item in result.batch.items
+            ]
+        }
+    )
+    state = service.submit_revision(
+        session_id, revision_id, batch, expected_state_version, idempotency_key
+    )
+    return Response(
+        content=state.model_dump_json(), media_type="application/json", status_code=201
     )
 
 
