@@ -1,7 +1,7 @@
 # Data and API contracts
 
 _Status: Session, world-state, drawing-revision, and canonical story core implemented_
-_Last reviewed: 2026-08-29_
+_Last reviewed: 2026-09-05_
 
 This document defines domain boundaries. Examples are illustrative JSON, not a committed OpenAPI schema. The first implementation issue should convert accepted contracts into Pydantic models and generated API documentation.
 
@@ -183,10 +183,15 @@ dependencies remain valid without exposing the removed item as current canonical
 The revision API accepts the same kind-discriminated, allowlisted observer item DTOs as the live
 Observer boundary. Canonical status, provenance, identity and relationship references cannot be
 submitted as model-controlled observation fields. Visible `object` and `object_count` proposals
-can be confirmed into canonical objects. `character`, `fact`, and `relationship` observations do
-not contain enough child-grounded identity/reference information to be confirmed directly, so
-their prompts allow only correction (child-supplied canonical meaning), rejection, or skipping.
-Confirming a removal remains allowed because it refers to an existing canonical item.
+can be confirmed into canonical objects. A `character` requires a non-empty
+`visible_description`; Core deterministically uses that as its neutral canonical display name and
+stores an optional `visible_gesture` as an attribute. Both confirm and correct accept that
+observer-facing character shape, so clients never construct canonical IDs or names. Safe object,
+object-count, and character prompts expose `confirm`, `correct`, `reject`, and `skip`.
+
+`fact` and `relationship` observer DTOs do not carry canonical subject/entity references. Their
+candidates remain persisted proposal/evidence and are not returned as child-facing grounding
+prompts, so revision decisions cannot mutate canonical state through this path.
 
 An awaiting revision is valid only while the world remains at `based_on_world_version`. If another
 mutation advances the world before resolution, the resolution attempt marks the revision

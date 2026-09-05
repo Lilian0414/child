@@ -56,6 +56,15 @@ def _canonical(world: WorldState) -> list[tuple[str, ObservationKind, dict[str, 
 def _normalized(kind: ObservationKind, value: dict[str, object]) -> dict[str, object]:
     if kind in {ObservationKind.OBJECT, ObservationKind.OBJECT_COUNT}:
         return {"label": value.get("label", value.get("type")), "count": value.get("count", 1)}
+    if kind == ObservationKind.CHARACTER:
+        attributes = value.get("attributes")
+        gesture = value.get("visible_gesture")
+        if gesture is None and isinstance(attributes, dict):
+            gesture = attributes.get("visible_gesture")
+        return {
+            "visible_description": value.get("visible_description", value.get("name")),
+            **({"visible_gesture": gesture} if gesture is not None else {}),
+        }
     return value
 
 
@@ -171,7 +180,12 @@ def select_prompts(candidates: list[ReconciliationCandidate]) -> list[GroundingP
         SemanticChange.UNCHANGED: 4,
     }
     selected = sorted(
-        (item for item in candidates if item.requires_grounding),
+        (
+            item
+            for item in candidates
+            if item.requires_grounding
+            and item.kind not in {ObservationKind.FACT, ObservationKind.RELATIONSHIP}
+        ),
         key=lambda item: (priorities[item.change], item.candidate_id),
     )[:MAX_GROUNDING_PROMPTS]
     return [
@@ -182,7 +196,12 @@ def select_prompts(candidates: list[ReconciliationCandidate]) -> list[GroundingP
             allowed_actions=(
                 ["confirm", "correct", "reject", "skip"]
                 if item.change == SemanticChange.REMOVED
-                or item.kind in {ObservationKind.OBJECT, ObservationKind.OBJECT_COUNT}
+                or item.kind
+                in {
+                    ObservationKind.OBJECT,
+                    ObservationKind.OBJECT_COUNT,
+                    ObservationKind.CHARACTER,
+                }
                 else ["correct", "reject", "skip"]
             ),
         )
