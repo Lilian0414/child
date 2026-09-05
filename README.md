@@ -336,7 +336,7 @@ make check
 ## 部署方向
 
 - Web + API：以 **Railway** 為 hackathon-first runtime，同一個服務，由 FastAPI 掛載靜態前端一併 serve，避免額外處理 CORS 與多平台管理成本。
-- Persistent state：先依 demo 需求決定 SQLite + Railway Volume 或 Railway Postgres；不把換 DB 當成核心功能。
+- Persistent state：第一個 staging 使用 SQLite + 掛載於 `/data` 的 Railway Volume；設定方式見 [Railway staging deployment](docs/DEPLOYMENT.md)。
 - Drawing / audio：MVP 不要求永久媒體儲存；需要保留時再接 private / short-lived object storage。
 - Secrets：只放 server-side environment variables（Railway Variables）。
 
